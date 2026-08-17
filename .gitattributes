@@ -1,0 +1,21 @@
+# Set default behavior to automatically handle line endings
+* text=auto eol=lf
+
+# Explicitly declare text files you always want to have LF line endings
+*.swift text eol=lf
+*.sh text eol=lf
+*.md text eol=lf
+*.json text eol=lf
+*.yml text eol=lf
+*.yaml text eol=lf
+*.plist text eol=lf
+
+# Declare files that will always have binary behavior
+*.icns binary
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.car binary
+*.dmg binary
+*.zip binary
+*.tar.gz binary

@@ -9,7 +9,7 @@ enum USBStorageFixtures {
             locationID: 0x0024_0000,
             registryEntryID: 0x1000_2400,
             registryPath: "IOService:/AppleARMPE/usb@0/HS01@00240000",
-            serialNumber: "4C530001230101234567",
+            serialNumber: "MOCK-SERIAL-0001",
             productName: "SanDisk 3.2Gen1"
         )
 

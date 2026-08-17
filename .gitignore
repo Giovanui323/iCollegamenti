@@ -1,11 +1,63 @@
+# OS generated files
 .DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+*~
+*.swp
+*.bak
+*.tmp
+
+# Xcode & Swift Build Artifacts
 .build/
 .swiftpm/
 iCollegamenti.app/
 iCollegamenti.dmg
 build.log
+*.log
 cache/
 DerivedData/
 *.xcuserstate
 xcuserdata/
+*.xcworkspace
+!default.xcworkspace
+
+# Internal planning, docs & sensitive folders
 docs/
+plans/
+specs/
+notes/
+scratch/
+artifacts/
+.gemini/
+.claude/
+.cursor/
+.idea/
+.vscode/
+
+# Private credentials, keys & environment files
+.env
+.env.*
+*.key
+*.pem
+*.p12
+*.cer
+*.cert
+*.pfx
+*.secret
+*credentials*
+*token*
+*auth*
+*private*
+
+# Exported user diagnostic reports
+*.csv
+*.pdf
+*.txt
+Report_*
+Eventi_*
+Diagnostica_*
+Cavi_*

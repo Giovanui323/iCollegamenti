@@ -35,12 +35,18 @@ final class BenchmarkService {
         defer { benchmarkTask = nil; isRunning = false }
 
         do {
-            benchmarkTask = Task { [worker] in
+            let task = Task { [worker] in
                 try await worker.run(mountPath: mountPath, testSizeBytes: config.testSizeBytes) { [weak self] update in
                     await self?.apply(update)
                 }
             }
-            let measurement = try await benchmarkTask!.value
+            benchmarkTask = task
+            // Cancelling the caller must also stop the benchmark; awaiting its value alone does not.
+            let measurement = try await withTaskCancellationHandler {
+                try await task.value
+            } onCancel: {
+                task.cancel()
+            }
             let result = BenchmarkResult(
                 sequentialReadMBps: measurement.sequentialReadMBps,
                 sequentialWriteMBps: measurement.sequentialWriteMBps,
@@ -100,7 +106,7 @@ final class BenchmarkService {
                 for: configuration.preset,
                 volumeCapacityBytes: volumeCapacityBytes
             )
-            advancedBenchmarkTask = Task { [worker] in
+            let task = Task { [worker] in
                 try await worker.runAdvanced(
                     mountPath: mountPath,
                     configuration: configuration,
@@ -109,7 +115,12 @@ final class BenchmarkService {
                     await self?.apply(update)
                 }
             }
-            let completed = try await advancedBenchmarkTask!.value
+            advancedBenchmarkTask = task
+            let completed = try await withTaskCancellationHandler {
+                try await task.value
+            } onCancel: {
+                task.cancel()
+            }
             lastAdvancedResult = completed
             progress = 1
             currentPhase = "Completato"

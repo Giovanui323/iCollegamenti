@@ -1,6 +1,16 @@
 import Foundation
 import Observation
 
+/// Keeps stored data that cannot be decoded (for example from a newer app version). Without this, the next save
+/// would replace it with the current state and the data would be lost.
+enum StoredDataRecovery {
+    static func preserveUnreadable(_ data: Data, key: String) {
+        let backupKey = "\(key).unreadable"
+        guard UserDefaults.standard.data(forKey: backupKey) == nil else { return }
+        UserDefaults.standard.set(data, forKey: backupKey)
+    }
+}
+
 struct CertifiedCharger: Codable, Identifiable, Hashable {
     let id: UUID
     let brand: String
@@ -49,8 +59,11 @@ final class ChargerProfileStore {
     }
 
     private func load() {
-        guard let data = UserDefaults.standard.data(forKey: Self.storageKey),
-              let saved = try? JSONDecoder().decode([CertifiedCharger].self, from: data) else { return }
+        guard let data = UserDefaults.standard.data(forKey: Self.storageKey) else { return }
+        guard let saved = try? JSONDecoder().decode([CertifiedCharger].self, from: data) else {
+            StoredDataRecovery.preserveUnreadable(data, key: Self.storageKey)
+            return
+        }
         chargers = saved
     }
 

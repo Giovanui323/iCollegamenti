@@ -4,6 +4,7 @@ import CAVICore
 struct HDMICableTesterView: View {
     @Environment(HDMIDisplayDiscoveryService.self) private var hdmiService
     @Environment(EDIDReaderService.self) private var edidReader
+    @Environment(HDMIDisplayAnalysisService.self) private var hdmiAnalysis
     @Environment(LanguageManager.self) private var lm
     
     @State private var selectedTab: HDMITab = .signal
@@ -51,14 +52,25 @@ struct HDMICableTesterView: View {
                 )
             }
         }
-        .task { 
+        .task {
             let ids = hdmiService.externalDisplays.map(\.displayID)
             edidReader.readAllEDIDs(displayIDs: ids)
+            analyzeSelectedDisplay()
         }
         .onChange(of: hdmiService.externalDisplays) { _, newDisplays in
             let ids = newDisplays.map(\.displayID)
             edidReader.readAllEDIDs(displayIDs: ids)
         }
+        .onChange(of: hdmiService.selectedDisplay?.displayID) { _, _ in
+            analyzeSelectedDisplay()
+        }
+    }
+
+    /// The signal, bandwidth and chain views read `hdmiAnalysis.currentSignal`, which only `analyze` fills.
+    /// Nothing called it, so the signal showed 0 × 0 and 0 Hz for every monitor.
+    private func analyzeSelectedDisplay() {
+        guard let display = hdmiService.selectedDisplay else { return }
+        hdmiAnalysis.analyze(displayID: display.displayID, edid: edidReader.parsedEDID(for: display.displayID))
     }
     
     @MainActor

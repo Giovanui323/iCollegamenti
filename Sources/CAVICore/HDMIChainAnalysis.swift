@@ -91,7 +91,15 @@ public enum HDMIChainAnalyzer {
         return HDMIChainDiagnosis(nodes: nodes, bottleneckNodeId: bottleneckId, headline: headline, explanation: explanation, suggestions: suggestions)
     }
 
+    /// The adapter, the cable and the Mac's GPU link cannot be read from this Mac, so no chain is inferred.
+    /// Reporting "All good" here would certify hardware that was never measured.
     public static func analyze(macGPU: String, portType: String, adapterInfo: String?, testedCableBandwidth: Double?, displayMaxMode: String, currentMode: String) -> HDMIChainDiagnosis {
-        return HDMIChainDiagnosis(nodes: [], bottleneckNodeId: nil, headline: "All good", explanation: "No issues", suggestions: [])
+        HDMIChainDiagnosis(
+            nodes: [],
+            bottleneckNodeId: nil,
+            headline: "Chain not measured",
+            explanation: "This Mac does not expose the adapter, cable and GPU link details needed to evaluate the chain. No conclusion is drawn.",
+            suggestions: []
+        )
     }
 }

@@ -1,4 +1,5 @@
 import Foundation
+import CryptoKit
 
 /// Result of importing a history file: how many records were added and why others were skipped.
 struct HistoryImportSummary: Equatable {
@@ -55,6 +56,47 @@ enum HistoryImportValidator {
             skippedDuplicates: duplicates
         )
         return (accepted, summary)
+    }
+
+    /// Decodes each element on its own, so one malformed entry does not discard the whole file.
+    /// Exports made for sharing omit `id` (see `SharedExportSanitizer`). For those, the id is derived
+    /// from the record content, so importing the same file twice does not duplicate results.
+    static func decodeRecords(from data: Data, decoder: JSONDecoder) throws -> (records: [CableTestResult], undecodable: Int) {
+        guard let array = try JSONSerialization.jsonObject(with: data) as? [Any] else {
+            throw CocoaError(.fileReadCorruptFile)
+        }
+
+        var records: [CableTestResult] = []
+        var undecodable = 0
+        for element in array {
+            guard var object = element as? [String: Any] else {
+                undecodable += 1
+                continue
+            }
+            if object["id"] == nil {
+                guard let canonical = try? JSONSerialization.data(withJSONObject: object, options: [.sortedKeys]) else {
+                    undecodable += 1
+                    continue
+                }
+                object["id"] = deterministicID(for: canonical).uuidString
+            }
+            guard let itemData = try? JSONSerialization.data(withJSONObject: object),
+                  let record = try? decoder.decode(CableTestResult.self, from: itemData)
+            else {
+                undecodable += 1
+                continue
+            }
+            records.append(record)
+        }
+        return (records, undecodable)
+    }
+
+    private static func deterministicID(for content: Data) -> UUID {
+        let bytes = Array(SHA256.hash(data: content).prefix(16))
+        return UUID(uuid: (
+            bytes[0], bytes[1], bytes[2], bytes[3], bytes[4], bytes[5], bytes[6], bytes[7],
+            bytes[8], bytes[9], bytes[10], bytes[11], bytes[12], bytes[13], bytes[14], bytes[15]
+        ))
     }
 
     private static func isPlausibleBenchmark(_ value: Double?) -> Bool {

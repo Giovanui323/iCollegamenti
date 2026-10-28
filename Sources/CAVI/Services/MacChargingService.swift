@@ -52,14 +52,19 @@ struct MacChargingSnapshot: Sendable {
 @MainActor
 final class MacChargingService {
     private static let historyStorageKey = "chargingHistory.v1"
+    /// The live chart only shows recent readings; older samples from previous launches are dropped.
+    private static let historyWindow: TimeInterval = 10 * 60
     private(set) var snapshot = MacChargingSnapshot.unavailable
     private(set) var recentSamples: [ChargingSample] = []
     private var refreshTimer: Timer?
 
     init() {
-        if let data = UserDefaults.standard.data(forKey: Self.historyStorageKey),
-           let stored = try? JSONDecoder().decode([ChargingSample].self, from: data) {
-            recentSamples = ChargingHistory.trim(stored, limit: 60)
+        if let data = UserDefaults.standard.data(forKey: Self.historyStorageKey) {
+            if let stored = try? JSONDecoder().decode([ChargingSample].self, from: data) {
+                recentSamples = ChargingHistory.recent(stored, limit: 60, window: Self.historyWindow)
+            } else {
+                StoredDataRecovery.preserveUnreadable(data, key: Self.historyStorageKey)
+            }
         }
     }
 
@@ -92,8 +97,9 @@ final class MacChargingService {
             batteryState: battery.state,
             batteryPercent: battery.percent
         )
-        if let watts = snapshot.observedWatts {
-            recentSamples = ChargingHistory.trim(recentSamples + [ChargingSample(watts: watts)], limit: 60)
+        // Only record while on external power: on battery the reading is discharge, not charging.
+        if snapshot.isOnExternalPower, let watts = snapshot.observedWatts {
+            recentSamples = ChargingHistory.recent(recentSamples + [ChargingSample(watts: watts)], limit: 60, window: Self.historyWindow)
             if let data = try? JSONEncoder().encode(recentSamples) {
                 UserDefaults.standard.set(data, forKey: Self.historyStorageKey)
             }

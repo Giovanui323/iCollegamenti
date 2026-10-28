@@ -2,6 +2,13 @@ import Foundation
 import Darwin
 import CryptoKit
 
+/// On macOS `fsync` does not flush the drive cache, so write speeds would be inflated.
+/// `F_FULLFSYNC` does flush it; fall back to `fsync` on filesystems that do not support it.
+private func fullSync(_ fd: Int32) -> Int32 {
+    if fcntl(fd, F_FULLFSYNC) == 0 { return 0 }
+    return fsync(fd)
+}
+
 public enum BenchmarkError: Error, LocalizedError, Equatable {
     case volumeNotWritable, insufficientSpace, insufficientSpaceWithReserve(UInt64), extendedTestConfirmationRequired, fileIOError(String), cancelled, invalidPath
     public var errorDescription: String? {
@@ -44,7 +51,7 @@ public struct BenchmarkWorker: Sendable {
         guard writeFD != -1 else { throw BenchmarkError.volumeNotWritable }; defer { close(writeFD) }; _ = fcntl(writeFD, F_NOCACHE, 1)
         var written: UInt64 = 0
         while written < testSizeBytes { try Task.checkCancellation(); let count = Int(min(UInt64(size), testSizeBytes - written)); let result = write(writeFD, buffer, count); guard result > 0 else { throw BenchmarkError.fileIOError(result == 0 ? "Scrittura incompleta" : String(cString: strerror(errno))) }; written += UInt64(result); await progress(.init(phase: .writing, fractionCompleted: Double(written) / Double(testSizeBytes) * 0.5)) }
-        guard fsync(writeFD) == 0 else { throw BenchmarkError.fileIOError(String(cString: strerror(errno))) }
+        guard fullSync(writeFD) == 0 else { throw BenchmarkError.fileIOError(String(cString: strerror(errno))) }
         let writeDuration = CFAbsoluteTimeGetCurrent() - writeStart
         let readFD = open(path, O_RDONLY); guard readFD != -1 else { throw BenchmarkError.fileIOError(String(cString: strerror(errno))) }; defer { close(readFD) }; _ = fcntl(readFD, F_NOCACHE, 1)
         var readBuffer = [UInt8](repeating: 0, count: size), readTotal: UInt64 = 0; let readStart = CFAbsoluteTimeGetCurrent()
@@ -218,7 +225,7 @@ public extension BenchmarkWorker {
             await progress(.init(phase: .writing, fractionCompleted: min(Double(totalWritten) / Double(byteCount), 0.99)))
             if !isStressTest && totalWritten >= byteCount { break }
         }
-        guard fsync(fd) == 0 else { throw ioError() }
+        guard fullSync(fd) == 0 else { throw ioError() }
         if samples.last?.transferredBytes != totalWritten {
             let elapsed = max(CFAbsoluteTimeGetCurrent() - started, 0.000_001)
             samples.append(BenchmarkSample(
@@ -277,7 +284,7 @@ public extension BenchmarkWorker {
                 await progress(.init(phase: isWrite ? .writing : .reading, fractionCompleted: Double(operation + 1) / Double(operationCount)))
             }
         }
-        if isWrite, fsync(fd) != 0 { throw ioError() }
+        if isWrite, fullSync(fd) != 0 { throw ioError() }
         let elapsed = max(CFAbsoluteTimeGetCurrent() - started, 0.000_001)
         let iops = Double(operationCount) / elapsed
         return AdvancedBenchmarkResult(
@@ -314,7 +321,7 @@ public extension BenchmarkWorker {
                 await progress(.init(phase: .writing, fractionCompleted: Double(index + 1) / Double(operations)))
             }
         }
-        guard fsync(fd) == 0 else { throw ioError() }
+        guard fullSync(fd) == 0 else { throw ioError() }
         let elapsed = max(CFAbsoluteTimeGetCurrent() - started, 0.000_001)
         let half = Double(alignedByteCount / 2) / elapsed / 1_000_000
         return AdvancedBenchmarkResult(
@@ -378,7 +385,7 @@ public extension BenchmarkWorker {
             written += UInt64(count)
             await progress(.init(phase: .writing, fractionCompleted: Double(written) / Double(byteCount) * 0.5))
         }
-        guard fsync(fd) == 0 else { throw ioError() }
+        guard fullSync(fd) == 0 else { throw ioError() }
 
         guard lseek(fd, 0, SEEK_SET) != -1 else { throw ioError() }
         var readHash = SHA256()
@@ -421,7 +428,7 @@ public extension BenchmarkWorker {
             written += UInt64(count)
             await progress(.init(phase: .writing, fractionCompleted: Double(written) / Double(byteCount) * 0.5))
         }
-        guard fsync(fd) == 0 else { throw ioError() }
+        guard fullSync(fd) == 0 else { throw ioError() }
     }
 
     private func readSequential(

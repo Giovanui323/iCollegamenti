@@ -13,17 +13,44 @@ public final class TestHistoryStore {
     public var advancedBenchmarkRecords: [AdvancedBenchmarkRecord] = []
     public var deviceHistory: [DeviceHistoryEntry] = []
     public private(set) var persistenceError: String?
+    /// Set when a stored file could not be read and was moved aside. Kept until the app restarts,
+    /// because a successful save must not hide it.
+    public private(set) var recoveryNotice: String?
     
     private let fileManager = FileManager.default
     
+    private var appSupportURL: URL {
+        fileManager.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
+    }
+
     private var baseDirectoryURL: URL {
-        let appSupport = fileManager.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
-        let primaryURL = appSupport.appendingPathComponent("iCollegamenti")
-        let legacyURL = appSupport.appendingPathComponent("CAVI")
-        if !fileManager.fileExists(atPath: primaryURL.path) && fileManager.fileExists(atPath: legacyURL.path) {
-            return legacyURL
+        appSupportURL.appendingPathComponent("iCollegamenti")
+    }
+
+    private var legacyDirectoryURL: URL {
+        appSupportURL.appendingPathComponent("CAVI")
+    }
+
+    private static let storedFileNames = [
+        "history.json",
+        "references.json",
+        "cables.json",
+        "advanced-benchmarks.json",
+        "device-history.json"
+    ]
+
+    /// Copies data from the folder used before the rename. The old files are left in place, and a file
+    /// already in the new folder is never overwritten. Earlier versions returned the old folder only while
+    /// the new one did not exist, so the first launch that created the new folder hid all old data.
+    private func migrateLegacyDataIfNeeded() {
+        ensureDirectoryExists()
+        for name in Self.storedFileNames {
+            let source = legacyDirectoryURL.appendingPathComponent(name)
+            let destination = baseDirectoryURL.appendingPathComponent(name)
+            guard fileManager.fileExists(atPath: source.path),
+                  !fileManager.fileExists(atPath: destination.path) else { continue }
+            try? fileManager.copyItem(at: source, to: destination)
         }
-        return primaryURL
     }
     
     private var historyFileURL: URL {
@@ -283,13 +310,23 @@ public final class TestHistoryStore {
     }
 
     func importResults(from data: Data) throws -> HistoryImportSummary {
-        guard let imported = try? decoder.decode([CableTestResult].self, from: data) else { throw ImportError.invalidFile }
+        let decoded: (records: [CableTestResult], undecodable: Int)
+        do {
+            decoded = try HistoryImportValidator.decodeRecords(from: data, decoder: decoder)
+        } catch {
+            throw ImportError.invalidFile
+        }
         let existingIDs = Set(testResults.map(\.id))
-        let (newResults, summary) = HistoryImportValidator.partition(imported, existingIDs: existingIDs)
-        guard !newResults.isEmpty else { return summary }
+        let (newResults, summary) = HistoryImportValidator.partition(decoded.records, existingIDs: existingIDs)
+        let total = HistoryImportSummary(
+            added: summary.added,
+            rejectedInvalid: summary.rejectedInvalid + decoded.undecodable,
+            skippedDuplicates: summary.skippedDuplicates
+        )
+        guard !newResults.isEmpty else { return total }
         testResults.insert(contentsOf: newResults, at: 0)
         save()
-        return summary
+        return total
     }
     
     // MARK: - Reference Devices
@@ -544,31 +581,49 @@ public final class TestHistoryStore {
     // MARK: - Persistence
     
     public func load() {
-        ensureDirectoryExists()
+        migrateLegacyDataIfNeeded()
         
-        if let data = try? Data(contentsOf: historyFileURL),
-           let decoded = try? decoder.decode([CableTestResult].self, from: data) {
+        if let decoded = decodeFile([CableTestResult].self, at: historyFileURL) {
             testResults = decoded
         }
         
-        if let data = try? Data(contentsOf: referencesFileURL),
-           let decoded = try? decoder.decode([ReferenceDevice].self, from: data) {
+        if let decoded = decodeFile([ReferenceDevice].self, at: referencesFileURL) {
             referenceDevices = decoded
         }
 
-        if let data = try? Data(contentsOf: cablesFileURL),
-           let decoded = try? decoder.decode([CableProfile].self, from: data) {
+        if let decoded = decodeFile([CableProfile].self, at: cablesFileURL) {
             cableProfiles = decoded
         }
 
-        if let data = try? Data(contentsOf: advancedBenchmarksFileURL),
-           let decoded = try? decoder.decode([AdvancedBenchmarkRecord].self, from: data) {
+        if let decoded = decodeFile([AdvancedBenchmarkRecord].self, at: advancedBenchmarksFileURL) {
             advancedBenchmarkRecords = decoded
         }
 
-        if let data = try? Data(contentsOf: deviceHistoryFileURL),
-           let decoded = try? decoder.decode([DeviceHistoryEntry].self, from: data) {
+        if let decoded = decodeFile([DeviceHistoryEntry].self, at: deviceHistoryFileURL) {
             deviceHistory = decoded
+        }
+    }
+
+    /// Decodes a stored file. If the file exists but cannot be read (corrupt, or written by a newer
+    /// version), it is moved aside before the next save could overwrite it, and the user is told.
+    private func decodeFile<T: Decodable>(_ type: T.Type, at url: URL) -> T? {
+        guard fileManager.fileExists(atPath: url.path) else { return nil }
+        if let data = try? Data(contentsOf: url), let value = try? decoder.decode(type, from: data) {
+            return value
+        }
+        quarantine(url)
+        return nil
+    }
+
+    private func quarantine(_ url: URL) {
+        let stamp = Int(Date().timeIntervalSince1970)
+        let stem = url.deletingPathExtension().lastPathComponent
+        let backup = url.deletingLastPathComponent().appendingPathComponent("\(stem).corrupt-\(stamp).json")
+        do {
+            try fileManager.moveItem(at: url, to: backup)
+            recoveryNotice = "Un file della cronologia non era leggibile ed è stato salvato come \(backup.lastPathComponent)."
+        } catch {
+            recoveryNotice = "Un file della cronologia non era leggibile e non è stato possibile metterlo da parte: \(error.localizedDescription)"
         }
     }
     

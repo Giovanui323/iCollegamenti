@@ -17,7 +17,9 @@ public final class DeviceDiscoveryService {
     var reconciledGraph = ReconciledUSBStorageGraph(physicalDevices: [], uplinks: [])
     private var vendorCatalog: USBVendorCatalog?
     private weak var eventLog: HardwareEventLog?
-    private var sessionStartedAtByBSDName: [String: Date] = [:]
+    private var sessionStartedAtByKey: [String: Date] = [:]
+    private var refreshTask: Task<Void, Never>?
+    private var refreshPending = false
     
     private var daSession: DASession?
     private var notificationPort: IONotificationPortRef?
@@ -62,6 +64,11 @@ public final class DeviceDiscoveryService {
     
     /// Safely unmounts and ejects the specified drive using NSWorkspace.
     public func ejectDevice(_ device: DriveDevice) async throws {
+        guard !device.mountPath.isEmpty else {
+            throw CocoaError(.fileNoSuchFile, userInfo: [
+                NSLocalizedDescriptionKey: "Nessun volume montato da espellere."
+            ])
+        }
         let url = URL(fileURLWithPath: device.mountPath)
         try await Task.detached(priority: .userInitiated) {
             try NSWorkspace.shared.unmountAndEjectDevice(at: url)
@@ -186,9 +193,20 @@ public final class DeviceDiscoveryService {
     
     // MARK: - Device Scanning
     
+    /// Only one scan runs at a time. A request that arrives during a scan queues one more scan, so the last
+    /// snapshot applied is always the newest one. Overlapping scans could finish out of order and leave an old list.
     public func refreshDevices() {
-        Task {
-            await self.refreshDevicesNow()
+        if refreshTask != nil {
+            refreshPending = true
+            return
+        }
+        refreshTask = Task { [weak self] in
+            guard let self else { return }
+            repeat {
+                self.refreshPending = false
+                await self.refreshDevicesNow()
+            } while self.refreshPending
+            self.refreshTask = nil
         }
     }
 
@@ -213,8 +231,21 @@ public final class DeviceDiscoveryService {
         selectedDevice = candidateByPhysical ?? candidateByBSD ?? foundDevices.first(where: \.isStorageDevice) ?? foundDevices.first
     }
 
+    /// Devices with a BSD name are keyed by it. Devices without one (most non-storage peripherals) are keyed by
+    /// their own fingerprint. Before, those fell back to `Date()`, so the fingerprint changed on every call.
+    private static func sessionKey(for device: DriveDevice) -> String {
+        device.bsdName.isEmpty ? device.connectionFingerprint : device.bsdName
+    }
+
     public func connectionFingerprint(for device: DriveDevice) -> String {
-        let startedAt = sessionStartedAtByBSDName[device.bsdName] ?? Date()
+        let key = Self.sessionKey(for: device)
+        let startedAt: Date
+        if let known = sessionStartedAtByKey[key] {
+            startedAt = known
+        } else {
+            startedAt = Date()
+            sessionStartedAtByKey[key] = startedAt
+        }
         return device.recognitionFingerprint(connectedAt: startedAt)
     }
 
@@ -237,11 +268,11 @@ public final class DeviceDiscoveryService {
     }
 
     private func updateConnectionSessions(with devices: [DriveDevice]) {
-        let bsdNames = Set(devices.map(\.bsdName).filter { !$0.isEmpty })
-        sessionStartedAtByBSDName = sessionStartedAtByBSDName.filter { bsdNames.contains($0.key) }
+        let keys = Set(devices.map(Self.sessionKey(for:)))
+        sessionStartedAtByKey = sessionStartedAtByKey.filter { keys.contains($0.key) }
         let now = Date()
-        for bsdName in bsdNames where sessionStartedAtByBSDName[bsdName] == nil {
-            sessionStartedAtByBSDName[bsdName] = now
+        for key in keys where sessionStartedAtByKey[key] == nil {
+            sessionStartedAtByKey[key] = now
         }
     }
 

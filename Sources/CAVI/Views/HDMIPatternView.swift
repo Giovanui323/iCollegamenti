@@ -9,20 +9,60 @@ struct HDMIPatternView: View {
             LazyVGrid(columns: [GridItem(.adaptive(minimum: 200))], spacing: 16) {
                 ForEach(HDMITestPattern.allCases, id: \.self) { pattern in
                     PatternCard(pattern: pattern, lm: lm)
-                        .onTapGesture { openFullscreenPattern(pattern) }
+                        .onTapGesture { PatternWindowPresenter.shared.present(pattern) }
                 }
             }
             .padding()
         }
     }
-    
-    private func openFullscreenPattern(_ pattern: HDMITestPattern) {
-        let hostingController = NSHostingController(rootView: FullscreenPatternRenderView(pattern: pattern))
-        let window = NSWindow(contentViewController: hostingController)
-        window.styleMask = [.borderless, .fullSizeContentView]
+}
+
+/// Shows a test pattern full screen. The window is kept in `openWindows` while it is visible;
+/// a local `NSWindow` would be released as soon as the tap handler returned, so nothing appeared.
+@MainActor
+final class PatternWindowPresenter: NSObject, NSWindowDelegate {
+    static let shared = PatternWindowPresenter()
+    private var openWindows: [NSWindow] = []
+
+    func present(_ pattern: HDMITestPattern) {
+        // Prefer an external display (the one the cable feeds); fall back to the main screen.
+        let screens = NSScreen.screens
+        let target = screens.first { $0 != NSScreen.main } ?? NSScreen.main ?? screens.first
+        guard let frame = target?.frame else { return }
+
+        let window = PatternWindow(contentRect: frame, styleMask: [.borderless], backing: .buffered, defer: false)
+        window.isReleasedWhenClosed = false
         window.level = .screenSaver
+        window.backgroundColor = .black
+        window.delegate = self
+        window.onEscape = { [weak window] in window?.close() }
+        window.contentView = NSHostingView(rootView: FullscreenPatternRenderView(pattern: pattern) { [weak window] in
+            window?.close()
+        })
+        openWindows.append(window)
+        window.setFrame(frame, display: true)
         window.makeKeyAndOrderFront(nil)
-        window.toggleFullScreen(nil)
+    }
+
+    func windowWillClose(_ notification: Notification) {
+        guard let window = notification.object as? NSWindow else { return }
+        openWindows.removeAll { $0 === window }
+    }
+}
+
+/// A borderless window can only become key if it says so; Escape needs key focus to close it.
+final class PatternWindow: NSWindow {
+    var onEscape: (() -> Void)?
+
+    override var canBecomeKey: Bool { true }
+
+    override func keyDown(with event: NSEvent) {
+        let closesWithCommandW = event.modifierFlags.contains(.command) && event.charactersIgnoringModifiers == "w"
+        if event.keyCode == 53 || closesWithCommandW {
+            onEscape?()
+        } else {
+            super.keyDown(with: event)
+        }
     }
 }
 
@@ -87,7 +127,8 @@ struct PatternCard: View {
 
 struct FullscreenPatternRenderView: View {
     let pattern: HDMITestPattern
-    @Environment(\.dismiss) private var dismiss
+    /// Closes the window that shows the pattern (tap or Escape).
+    var onClose: () -> Void = {}
 
     var body: some View {
         ZStack {
@@ -100,15 +141,35 @@ struct FullscreenPatternRenderView: View {
             case .frameTiming: frameTimingRender
             case .blackLevel: Color.black
             case .whiteLevel: Color.white
-            case .sharpness: Color.black // simplified
-            case .hdrHighlight: Color.white // simplified
+            case .sharpness: sharpnessRender
+            case .hdrHighlight: hdrHighlightRender
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .ignoresSafeArea()
-        .onTapGesture {
-            NSApp.keyWindow?.toggleFullScreen(nil)
-            NSApp.keyWindow?.close()
+        .contentShape(Rectangle())
+        .onTapGesture { onClose() }
+    }
+
+    /// One-point black and white vertical lines: a display that blurs them is not sharp.
+    private var sharpnessRender: some View {
+        Canvas { context, size in
+            context.fill(Path(CGRect(origin: .zero, size: size)), with: .color(.black))
+            var x: CGFloat = 0
+            while x < size.width {
+                context.fill(Path(CGRect(x: x, y: 0, width: 1, height: size.height)), with: .color(.white))
+                x += 2
+            }
+        }
+    }
+
+    /// A white patch on black. Only a HDR-capable display shows it at full brightness.
+    private var hdrHighlightRender: some View {
+        ZStack {
+            Color.black
+            Rectangle()
+                .fill(Color.white)
+                .frame(width: 400, height: 240)
         }
     }
     

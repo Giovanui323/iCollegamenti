@@ -913,8 +913,8 @@ struct USBFlashDriveTesterView: View {
         case .standard1GiB: "1 GB"
         case .extended5GiB: "5 GB"
         case .extended10GiB: "10 GB"
-        case .fiftyGiB: "50 GB"
-        case .hundredGiB: "100 GB"
+        case .fiftyGiB: "50 GiB"
+        case .hundredGiB: "100 GiB"
         }
     }
 

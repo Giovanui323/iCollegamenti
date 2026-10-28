@@ -140,7 +140,11 @@ struct ContentView: View {
         let savePanel = NSSavePanel()
         savePanel.nameFieldStringValue = filename
         if savePanel.runModal() == .OK, let url = savePanel.url {
-            try? text.write(to: url, atomically: true, encoding: .utf8)
+            do {
+                try text.write(to: url, atomically: true, encoding: .utf8)
+            } catch {
+                NSAlert(error: error).runModal()
+            }
         }
     }
 
@@ -149,7 +153,11 @@ struct ContentView: View {
         savePanel.nameFieldStringValue = filename
         savePanel.allowedContentTypes = [.pdf]
         if savePanel.runModal() == .OK, let url = savePanel.url {
-            try? PDFReportRenderer.write(report: text, to: url)
+            do {
+                try PDFReportRenderer.write(report: text, to: url)
+            } catch {
+                NSAlert(error: error).runModal()
+            }
         }
     }
 

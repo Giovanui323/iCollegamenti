@@ -19,6 +19,9 @@ public struct GuidedCableWizardView: View {
     @State private var wizardBenchmarkError: String?
     @State private var forceReRun = false
     @State private var diagnosticMode: GuidedDiagnosticMode = .driveIsSlow
+    /// The running benchmark. It is kept so it can be cancelled when the wizard closes or is reset;
+    /// before, it kept running and could write its result into the history after the window was gone.
+    @State private var benchmarkTask: Task<Void, Never>?
     
     public init() {}
 
@@ -60,6 +63,17 @@ public struct GuidedCableWizardView: View {
             forceReRun = false
             populateFromSavedIfAvailable()
         }
+        .onDisappear {
+            benchmarkTask?.cancel()
+        }
+    }
+
+    /// Stops a running benchmark, clears the wizard, and returns to the first step.
+    private func cancelWizard() {
+        benchmarkTask?.cancel()
+        benchmarkTask = nil
+        resetWizardState()
+        currentStep = 1
     }
     
     // MARK: - Header & Step Indicator
@@ -108,8 +122,8 @@ public struct GuidedCableWizardView: View {
             }
         case .ssdIsHealthy:
             switch number {
-            case 1: return languageManager.t("SMART", "SMART")
-            case 2: return languageManager.t("Health", "Salute")
+            case 1: return languageManager.t("Link", "Collegamento")
+            case 2: return languageManager.t("Benchmark", "Benchmark")
             case 3: return languageManager.t("Performance", "Prestazioni")
             default: return languageManager.t("Report", "Report")
             }
@@ -282,9 +296,9 @@ public struct GuidedCableWizardView: View {
         case .bridge:
             return languageManager.t("Bridge controller limitation", "Limitazione del controller bridge")
         case .cable, .port:
-            return languageManager.t("Cable limitation", "Limitazione del cavo")
+            return languageManager.t("Possible cable limitation", "Possibile limitazione del cavo")
         case .device:
-            return languageManager.t("Device limitation", "Limitazione del dispositivo")
+            return languageManager.t("Possible device limitation", "Possibile limitazione del dispositivo")
         }
     }
 
@@ -316,8 +330,8 @@ public struct GuidedCableWizardView: View {
             )
         case .bridge:
             return languageManager.t(
-                "The USB-NVMe bridge controller supports up to \(current), limiting the connection.",
-                "Il controller bridge USB-NVMe supporta fino a \(current), limitando la connessione."
+                "The link is at \(current). The USB-NVMe bridge controller may be the limit; software cannot confirm it.",
+                "Il link è a \(current). Il controller bridge USB-NVMe potrebbe essere il limite; il software non può confermarlo."
             )
         case .cable, .port:
             return languageManager.t(
@@ -326,8 +340,8 @@ public struct GuidedCableWizardView: View {
             )
         case .device:
             return languageManager.t(
-                "The SSD/device itself is the performance-limiting component.",
-                "L'SSD/dispositivo stesso è il componente che limita le prestazioni."
+                "No link limit was observed. The device itself may be the limit; software cannot confirm it.",
+                "Non è stato osservato un limite del link. Il dispositivo stesso potrebbe essere il limite; il software non può confermarlo."
             )
         }
     }
@@ -366,8 +380,8 @@ public struct GuidedCableWizardView: View {
             )
         case .device:
             return languageManager.t(
-                "Safe next check: no action needed, device is operating at its maximum.",
-                "Controllo sicuro successivo: nessuna azione necessaria, il dispositivo sta operando al suo massimo."
+                "Safe next check: compare with the same device on another port to see whether the device is the limit.",
+                "Controllo sicuro successivo: confronta lo stesso dispositivo su un'altra porta per capire se è il dispositivo a limitare."
             )
         }
     }
@@ -562,9 +576,11 @@ public struct GuidedCableWizardView: View {
     
     private func runWizardBenchmark(for device: DriveDevice) {
         wizardBenchmarkError = nil
-        Task {
+        benchmarkTask?.cancel()
+        benchmarkTask = Task {
             do {
                 let completed = try await benchmarkService.runBenchmark(mountPath: device.mountPath, config: BenchmarkConfig(testSizeBytes: 256_000_000))
+                guard !Task.isCancelled else { return }
                 wizardBenchmarkResult = completed
                 
                 let fingerprint = discoveryService.connectionFingerprint(for: device)
@@ -593,7 +609,7 @@ public struct GuidedCableWizardView: View {
         switch diagnosticMode {
         case .driveIsSlow: "Four steps to identify the observed link, topology, benchmark, and likely causes of slow drive performance."
         case .cableIsGood: "Four steps to check observed data link, available power information, stability, and optional benchmark evidence."
-        case .ssdIsHealthy: "Four steps to check the storage link, available drive health, benchmark behavior, and data integrity evidence."
+        case .ssdIsHealthy: "Four steps to check the observed storage link and benchmark behavior. Drive health is not read by this app."
         case .dockOrHub: "Four steps to inspect the observed uplink, shared bandwidth, available power information, and connected devices."
         }
     }
@@ -615,7 +631,7 @@ public struct GuidedCableWizardView: View {
         case .cableIsGood:
             checklist = languageManager.t("Checks: observed link and stability. Cable certification and e-marker are shown only when macOS exposes them.", "Controlli: link e stabilità osservati. Certificazione cavo ed e-marker sono mostrati solo se macOS li espone.")
         case .ssdIsHealthy:
-            checklist = languageManager.t("Checks: available SMART data, temperature, wear, quick benchmark, and integrity test when you choose it.", "Controlli: dati SMART disponibili, temperatura, usura, benchmark rapido e test d’integrità quando lo scegli.")
+            checklist = languageManager.t("Checks: observed storage link and quick benchmark. SMART, temperature and wear are not read by this app.", "Controlli: link di archiviazione osservato e benchmark rapido. SMART, temperatura e usura non sono letti da questa app.")
         case .dockOrHub:
             checklist = languageManager.t("Checks: observed topology, uplink budget, connected consumers, and available power information.", "Controlli: topologia osservata, budget uplink, consumer collegati e informazioni di potenza disponibili.")
         }
@@ -753,6 +769,9 @@ public struct GuidedCableWizardView: View {
     
     private var wizardFooter: some View {
         HStack {
+            Button(languageManager.t("Cancel", "Annulla"), role: .cancel) {
+                cancelWizard()
+            }
             if currentStep > 1 {
                 Button(languageManager.t("Previous", "Precedente")) {
                     currentStep -= 1
@@ -822,9 +841,25 @@ public struct GuidedCableWizardView: View {
         savedResultID = result.id
     }
     
+    private func resetWizardState() {
+        cableName = ""
+        selectedCableID = nil
+        testNotes = ""
+        isCompleted = false
+        savedResultID = nil
+        wizardBenchmarkResult = nil
+        wizardBenchmarkError = nil
+        forceReRun = false
+    }
+
     private func populateFromSavedIfAvailable() {
         guard let device = discoveryService.selectedDevice,
-              let saved = historyStore.savedResult(forConnection: discoveryService.connectionFingerprint(for: device)) else { return }
+              let saved = historyStore.savedResult(forConnection: discoveryService.connectionFingerprint(for: device)) else {
+            // Without a saved result for this device, drop the previous device's state so it is not
+            // written into this device's record or shown as its measurement.
+            resetWizardState()
+            return
+        }
         
         cableName = saved.cableLabel
         selectedCableID = saved.cableID

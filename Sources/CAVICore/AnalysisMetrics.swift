@@ -83,6 +83,17 @@ public enum ChargingHistory {
         guard limit > 0 else { return [] }
         return Array(samples.filter { $0.watts >= 0 && $0.watts.isFinite }.suffix(limit))
     }
+
+    /// Keeps only valid samples from the last `window` seconds, capped at `limit`.
+    public static func recent(
+        _ samples: [ChargingSample],
+        limit: Int,
+        window: TimeInterval,
+        now: Date = Date()
+    ) -> [ChargingSample] {
+        let cutoff = now.addingTimeInterval(-window)
+        return trim(samples.filter { $0.timestamp >= cutoff }, limit: limit)
+    }
 }
 
 public enum DeviceRefreshPolicy {

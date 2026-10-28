@@ -32,8 +32,12 @@ struct EDIDInspectorView: View {
                 } else {
                     rawView(edid: edid)
                 }
+            } else if hdmiService.selectedDisplay != nil {
+                Text(lm.t("EDID not available for this display.", "EDID non disponibile per questo display."))
+                    .foregroundStyle(.secondary)
+                    .padding()
             } else {
-                Text(lm.t("Reading EDID...", "Lettura EDID..."))
+                Text(lm.t("No display selected.", "Nessun display selezionato."))
                     .foregroundStyle(.secondary)
                     .padding()
             }
@@ -53,7 +57,7 @@ struct EDIDInspectorView: View {
             
             GroupBox(lm.t("Display Info", "Info Display")) {
                 VStack(alignment: .leading, spacing: 8) {
-                    LabeledContent(lm.t("Physical Size", "Dimensioni Fisiche"), value: "\(String(format: "%.1f", edid.screenWidthCm)) cm × \(String(format: "%.1f", edid.screenHeightCm)) cm")
+                    LabeledContent(lm.t("Physical Size", "Dimensioni Fisiche"), value: "\(edid.screenWidthCm) cm × \(edid.screenHeightCm) cm")
                     LabeledContent(lm.t("Gamma", "Gamma"), value: edid.gamma != nil ? String(format: "%.2f", edid.gamma!) : "-")
                 }
             }

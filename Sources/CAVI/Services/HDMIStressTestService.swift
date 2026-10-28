@@ -14,6 +14,11 @@ public final class HDMIStressTestService {
     private var timer: Timer?
     private var initialMode: CGDisplayMode?
     private var initialRefresh: Double = 0
+    /// Last observed state, used to record only transitions.
+    private var lastActive = true
+    private var lastWidth = 0
+    private var lastHeight = 0
+    private var lastRefresh: Double = 0
 
     public init() {}
     
@@ -26,26 +31,38 @@ public final class HDMIStressTestService {
         
         initialMode = CGDisplayCopyDisplayMode(displayID)
         initialRefresh = initialMode?.refreshRate ?? 0
-        let initialWidth = initialMode?.width ?? 0
-        let initialHeight = initialMode?.height ?? 0
-        
+        lastActive = true
+        lastWidth = initialMode?.width ?? 0
+        lastHeight = initialMode?.height ?? 0
+        lastRefresh = initialRefresh
+
         timer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { [weak self] _ in
             guard let self else { return }
             Task { @MainActor in
                 self.elapsedSeconds += 1
                 
+                // Record a change once, when the state changes, not on every second it lasts.
                 let isActive = CGDisplayIsActive(displayID) != 0
-                if !isActive {
-                    self.recordEvent(.signalLoss, "Display signal lost at \(self.elapsedSeconds)s")
+                if isActive != self.lastActive {
+                    if !isActive {
+                        self.recordEvent(.signalLoss, "Display signal lost at \(self.elapsedSeconds)s")
+                    } else {
+                        self.recordEvent(.disconnect, "Display signal restored at \(self.elapsedSeconds)s")
+                    }
+                    self.lastActive = isActive
                 }
-                
+
                 if let currentMode = CGDisplayCopyDisplayMode(displayID) {
-                    if currentMode.width != initialWidth || currentMode.height != initialHeight {
+                    let resolutionChanged = currentMode.width != self.lastWidth || currentMode.height != self.lastHeight
+                    if resolutionChanged {
                         self.recordEvent(.modeChange, "Resolution changed to \(currentMode.width)x\(currentMode.height)")
                     }
-                    if currentMode.refreshRate != self.initialRefresh {
+                    if currentMode.refreshRate != self.lastRefresh {
                         self.recordEvent(.renegotiation, "Refresh changed to \(currentMode.refreshRate) Hz")
                     }
+                    self.lastWidth = currentMode.width
+                    self.lastHeight = currentMode.height
+                    self.lastRefresh = currentMode.refreshRate
                 }
                 
                 if self.elapsedSeconds >= durationSeconds {
@@ -76,7 +93,7 @@ public final class HDMIStressTestService {
             disconnects: disconnects,
             renegotiations: renegotiations,
             modeChanges: modeChanges,
-            hdcpFailures: 0,
+            hdcpFailures: 0, // Not measurable from software and not shown in the UI; do not read it as a result.
             stabilityScore: stabilityScore,
             events: events
         )

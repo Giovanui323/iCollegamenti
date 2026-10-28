@@ -68,7 +68,7 @@ final class DriveHealthService {
                 return .unavailable
             }
             do {
-                guard let data = try run("/usr/sbin/diskutil", arguments: ["info", "-plist", normalized]) else {
+                guard let data = run("/usr/sbin/diskutil", arguments: ["info", "-plist", normalized]) else {
                     return .unavailable
                 }
                 let values = try PropertyListSerialization.propertyList(from: data, format: nil) as? [String: Any]
@@ -83,7 +83,7 @@ final class DriveHealthService {
                 var unsafeShutdowns: Int?
 
                 if let smartctl = smartctlPath(),
-                   let smartData = try run(smartctl, arguments: ["-a", "-j", "-n", "standby", "/dev/\(normalized)"], acceptsNonZeroExit: true),
+                   let smartData = run(smartctl, arguments: ["-a", "-j", "-n", "standby", "/dev/\(normalized)"], acceptsNonZeroExit: true),
                    let smart = try? JSONSerialization.jsonObject(with: smartData) as? [String: Any] {
                     if let passed = nestedValue(in: smart, path: ["smart_status", "passed"]) as? Bool {
                         status = passed ? .verified : .failing
@@ -127,17 +127,13 @@ final class DriveHealthService {
         _ executable: String,
         arguments: [String],
         acceptsNonZeroExit: Bool = false
-    ) throws -> Data? {
-        let process = Process()
-        process.executableURL = URL(fileURLWithPath: executable)
-        process.arguments = arguments
-        let output = Pipe()
-        process.standardOutput = output
-        process.standardError = Pipe()
-        try process.run()
-        process.waitUntilExit()
-        guard acceptsNonZeroExit || process.terminationStatus == 0 else { return nil }
-        return output.fileHandleForReading.readDataToEndOfFile()
+    ) -> Data? {
+        // smartctl is polled while a benchmark runs, so a hung call must not block the poll.
+        guard let result = BoundedProcess.run(executable, arguments: arguments, timeout: 20), !result.timedOut else {
+            return nil
+        }
+        guard acceptsNonZeroExit || result.status == 0 else { return nil }
+        return result.output
     }
 
     private nonisolated static func smartctlPath() -> String? {

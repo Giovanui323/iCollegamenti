@@ -110,7 +110,11 @@ struct USBConnectionsView: View {
         isEjecting = true
         Task { @MainActor in
             defer { isEjecting = false }
-            try? await deviceDiscovery.ejectDevice(device)
+            do {
+                try await deviceDiscovery.ejectDevice(device)
+            } catch {
+                mountErrorMessage = error.localizedDescription
+            }
         }
     }
 

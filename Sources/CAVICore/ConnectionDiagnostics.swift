@@ -16,5 +16,11 @@ public enum BenchmarkEligibility {
 }
 
 public enum CSVEncoder {
-    public static func field(_ value: String) -> String { "\"\(value.replacingOccurrences(of: "\"", with: "\"\""))\"" }
+    /// Spreadsheets run a cell that starts with `=`, `+`, `-`, `@`, tab or CR as a formula. Device names come
+    /// from USB descriptors, so such a cell is prefixed with an apostrophe to stay plain text.
+    public static func field(_ value: String) -> String {
+        let startsLikeFormula = value.first.map { "=+-@\t\r".contains($0) } ?? false
+        let safe = startsLikeFormula ? "'" + value : value
+        return "\"\(safe.replacingOccurrences(of: "\"", with: "\"\""))\""
+    }
 }

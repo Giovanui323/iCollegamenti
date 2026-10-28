@@ -64,7 +64,8 @@ struct HDMISignalView: View {
                 let headroomPct = available > 0 ? max(0, (available - required) / available) : 0
                 
                 LabeledContent(lm.t("Required", "Richiesta"), value: String(format: "%.1f Gbps", required))
-                LabeledContent(lm.t("Available", "Disponibile"), value: String(format: "%.1f Gbps", available))
+                // 48 Gbps is the HDMI 2.1 ceiling, not what this cable and port negotiated; the app cannot read that.
+                LabeledContent(lm.t("HDMI 2.1 maximum", "Massimo HDMI 2.1"), value: String(format: "%.1f Gbps", available))
                 
                 VStack(alignment: .leading, spacing: 4) {
                     HStack {

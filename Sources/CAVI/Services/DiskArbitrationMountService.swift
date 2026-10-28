@@ -75,22 +75,31 @@ enum DiskArbitrationMountService {
             )
         }
         try await Task.detached(priority: .userInitiated) {
-            let process = Process()
-            process.executableURL = URL(fileURLWithPath: "/usr/sbin/diskutil")
-            process.arguments = ["mount", bsdName]
-            let pipe = Pipe()
-            process.standardOutput = pipe
-            process.standardError = pipe
-            try process.run()
-            process.waitUntilExit()
-            guard process.terminationStatus == 0 else {
-                let output = String(
-                    data: pipe.fileHandleForReading.readDataToEndOfFile(),
-                    encoding: .utf8
-                )?.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard let result = BoundedProcess.run(
+                "/usr/sbin/diskutil",
+                arguments: ["mount", bsdName],
+                timeout: 60,
+                mergeStandardError: true
+            ) else {
                 throw NSError(
                     domain: "diskutil",
-                    code: Int(process.terminationStatus),
+                    code: -1,
+                    userInfo: [NSLocalizedDescriptionKey: "diskutil non è stato avviato per montare \(bsdName)."]
+                )
+            }
+            guard !result.timedOut else {
+                throw NSError(
+                    domain: "diskutil",
+                    code: -2,
+                    userInfo: [NSLocalizedDescriptionKey: "diskutil non ha risposto entro 60 secondi per \(bsdName)."]
+                )
+            }
+            guard result.status == 0 else {
+                let output = String(data: result.output, encoding: .utf8)?
+                    .trimmingCharacters(in: .whitespacesAndNewlines)
+                throw NSError(
+                    domain: "diskutil",
+                    code: Int(result.status),
                     userInfo: [NSLocalizedDescriptionKey: output?.isEmpty == false ? output! : "diskutil non ha montato \(bsdName)."]
                 )
             }

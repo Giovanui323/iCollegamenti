@@ -116,7 +116,8 @@ struct CableTesterMainView: View {
             
             Spacer()
             
-            if let device = deviceDiscovery.selectedDevice, device.isStorageDevice, !device.bsdName.isEmpty {
+            // Only a mounted volume can be ejected. An unmounted disk has no mount path, and ejecting an empty path failed.
+            if let device = deviceDiscovery.selectedDevice, device.isStorageDevice, !device.mountPath.isEmpty {
                 Button(action: { eject(device: device) }) {
                     HStack(spacing: 4) {
                         Image(systemName: "eject.fill")
@@ -437,13 +438,14 @@ struct CableTesterMainView: View {
     
     @ViewBuilder
     private func overallHardwareScoreSection(for device: DriveDevice) -> some View {
-        let fingerprint = recognitionFingerprint(for: device)
-        let storedResult = historyStore.latestResult(forConnection: fingerprint)
-        let hasCable = selectedCableID != nil ? 90 : nil
+        // Only components backed by a real measurement are scored. A selected cable profile or a
+        // stored benchmark alone is not a measurement, so those components stay unscored (nil).
         let components = HardwareScoreComponents(
-            cable: hasCable,
-            connection: bottleneckAnalyzer.currentAnalysis?.severity == .critical ? 40 : (bottleneckAnalyzer.currentAnalysis?.severity == .warning ? 70 : 100),
-            performance: storedResult?.benchmarkReadMBps != nil ? 95 : nil,
+            cable: nil,
+            connection: bottleneckAnalyzer.currentAnalysis.map { analysis in
+                analysis.severity == .critical ? 40 : (analysis.severity == .warning ? 70 : 100)
+            },
+            performance: nil,
             health: nil,
             power: nil,
             stability: nil
@@ -661,11 +663,10 @@ struct CableTesterMainView: View {
         }
     }
 
+    /// Uses the discovery service's session clock for every device, so the fingerprint stays the same when this
+    /// view is recreated. Before, devices without a BSD name used `connectionStartedAt`, which resets with the view.
     private func recognitionFingerprint(for device: DriveDevice) -> String {
-        guard !device.bsdName.isEmpty else {
-            return device.recognitionFingerprint(connectedAt: connectionStartedAt)
-        }
-        return deviceDiscovery.connectionFingerprint(for: device)
+        deviceDiscovery.connectionFingerprint(for: device)
     }
 
     private var suggestedCable: CableProfile? {

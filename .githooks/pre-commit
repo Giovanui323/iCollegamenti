@@ -35,7 +35,7 @@ fi
 SECRETS_FOUND=0
 STAGED_DIFF=$(git diff --cached)
 
-if echo "$STAGED_DIFF" | grep -qE "-----BEGIN (RSA |EC |DSA |OPENSSH )?PRIVATE KEY-----"; then
+if echo "$STAGED_DIFF" | grep -qE -e "-----BEGIN (RSA |EC |DSA |OPENSSH )?PRIVATE KEY-----"; then
     echo "❌ ERROR: Detected Private Key in staged changes!"
     SECRETS_FOUND=1
 fi

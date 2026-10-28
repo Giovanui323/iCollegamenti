@@ -47,6 +47,16 @@ struct CableLeaderboardView: View {
     
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
+            if let recoveryNotice = historyStore.recoveryNotice {
+                Label(recoveryNotice, systemImage: "exclamationmark.triangle.fill")
+                    .font(.callout)
+                    .foregroundStyle(.orange)
+            }
+            if let persistenceError = historyStore.persistenceError {
+                Label(persistenceError, systemImage: "xmark.octagon.fill")
+                    .font(.callout)
+                    .foregroundStyle(.red)
+            }
             resultSummary
             filterControls
             
@@ -116,7 +126,7 @@ struct CableLeaderboardView: View {
                 "I record nuovi saranno aggiunti alla cronologia esistente; quelli con lo stesso ID non verranno duplicati."
             ))
         }
-        .alert(languageManager.t("Import", "Importazione"), isPresented: Binding(get: { importMessage != nil }, set: { if !$0 { importMessage = nil } })) {
+        .alert(languageManager.t("History", "Cronologia"), isPresented: Binding(get: { importMessage != nil }, set: { if !$0 { importMessage = nil } })) {
             Button("OK", role: .cancel) {}
         } message: {
             Text(importMessage ?? "")
@@ -673,7 +683,9 @@ struct CableLeaderboardView: View {
             }
             if !targetIDs.isEmpty {
                 Button(role: .destructive, action: {
-                    deleteSelectedItems(targetIDs)
+                    // Same confirmation as the toolbar button: the dialog deletes the current selection.
+                    selection = targetIDs
+                    showingDeleteSelectedConfirmation = true
                 }) {
                     Label(
                         targetIDs.count == 1 
@@ -748,7 +760,7 @@ struct CableLeaderboardView: View {
         
         if savePanel.runModal() == .OK, let url = savePanel.url {
             if let data = historyStore.exportMarkdown(language: languageManager.currentLanguage).data(using: .utf8) {
-                try? data.write(to: url)
+                writeExport(data, to: url)
             }
         }
     }
@@ -760,7 +772,7 @@ struct CableLeaderboardView: View {
         
         if savePanel.runModal() == .OK, let url = savePanel.url {
             if let data = historyStore.exportCSV().data(using: .utf8) {
-                try? data.write(to: url)
+                writeExport(data, to: url)
             }
         }
     }
@@ -772,8 +784,20 @@ struct CableLeaderboardView: View {
         
         if savePanel.runModal() == .OK, let url = savePanel.url {
             if let data = historyStore.exportJSON().data(using: .utf8) {
-                try? data.write(to: url)
+                writeExport(data, to: url)
             }
+        }
+    }
+
+    /// A failed write is shown to the user; before, the export did nothing and reported nothing.
+    private func writeExport(_ data: Data, to url: URL) {
+        do {
+            try data.write(to: url, options: .atomic)
+        } catch {
+            importMessage = languageManager.t(
+                "The export could not be saved: \(error.localizedDescription)",
+                "Esportazione non salvata: \(error.localizedDescription)"
+            )
         }
     }
 }

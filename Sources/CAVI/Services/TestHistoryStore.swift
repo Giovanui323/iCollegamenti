@@ -282,14 +282,14 @@ public final class TestHistoryStore {
         save()
     }
 
-    public func importResults(from data: Data) throws -> Int {
+    func importResults(from data: Data) throws -> HistoryImportSummary {
         guard let imported = try? decoder.decode([CableTestResult].self, from: data) else { throw ImportError.invalidFile }
         let existingIDs = Set(testResults.map(\.id))
-        let newResults = imported.filter { !existingIDs.contains($0.id) }
-        guard !newResults.isEmpty else { return 0 }
+        let (newResults, summary) = HistoryImportValidator.partition(imported, existingIDs: existingIDs)
+        guard !newResults.isEmpty else { return summary }
         testResults.insert(contentsOf: newResults, at: 0)
         save()
-        return newResults.count
+        return summary
     }
     
     // MARK: - Reference Devices

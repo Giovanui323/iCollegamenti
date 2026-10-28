@@ -101,6 +101,16 @@ struct ChargingSpeedView: View {
                             y: .value(languageManager.t("Watts", "Watt"), sample.watts)
                         )
                         .foregroundStyle(.orange.opacity(0.12))
+                        if let nominal = macCharging.snapshot.adapterWatts {
+                            RuleMark(y: .value(languageManager.t("Adapter rating", "Potenza nominale"), Double(nominal)))
+                                .foregroundStyle(.secondary)
+                                .lineStyle(StrokeStyle(lineWidth: 1, dash: [4, 4]))
+                                .annotation(position: .top, alignment: .leading) {
+                                    Text(languageManager.t("Adapter \(nominal) W", "Alimentatore \(nominal) W"))
+                                        .font(.caption2)
+                                        .foregroundStyle(.secondary)
+                                }
+                        }
                     }
                     .chartXAxis { AxisMarks(values: .automatic(desiredCount: 4)) }
                     .chartYAxis { AxisMarks(position: .leading) }

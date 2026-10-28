@@ -7,9 +7,10 @@ final class BenchmarkLinkExpectationTests: XCTestCase {
             BenchmarkLinkExpectation.usefulSequentialRange(linkSpeedBps: 5_000_000_000)
         )
 
-        XCTAssertEqual(expectation.minimumMBps, 375)
-        XCTAssertEqual(expectation.maximumMBps, 500)
-        XCTAssertEqual(expectation.theoreticalMaximumMBps, 625)
+        XCTAssertEqual(expectation.minimumMBps, 299, accuracy: 0.001)
+        XCTAssertEqual(expectation.maximumMBps, 460, accuracy: 0.001)
+        XCTAssertEqual(expectation.realisticMaximumMBps, 460, accuracy: 0.001)
+        XCTAssertEqual(expectation.theoreticalMaximumMBps, 625, accuracy: 0.001)
     }
 
     func testMissingOrZeroLinkDoesNotInventAnExpectedRange() {

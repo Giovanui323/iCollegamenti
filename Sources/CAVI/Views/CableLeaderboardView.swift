@@ -1,4 +1,5 @@
 import SwiftUI
+import AppKit
 import UniformTypeIdentifiers
 import Charts
 
@@ -487,11 +488,44 @@ struct CableLeaderboardView: View {
                         .overlay(RoundedRectangle(cornerRadius: 6).stroke(.quaternary))
                 }
                 
+                HStack {
+                    Spacer()
+                    Button(languageManager.t("Copy Details", "Copia dettagli"), systemImage: "doc.on.doc") {
+                        copyResultDetails(result)
+                    }
+                    .controlSize(.small)
+                }
+
                 historicalTrendSection(for: result)
             }
         }
     }
-    
+
+    private func copyResultDetails(_ result: CableTestResult) {
+        let unavailable = languageManager.t("Not available", "Non disponibile")
+        let header = languageManager.t("=== TEST RESULT DETAILS ===", "=== DETTAGLI RISULTATO DI TEST ===")
+        let date = result.timestamp.formatted(date: .abbreviated, time: .shortened)
+        let link = result.linkSpeedBps > 0
+            ? String(format: "%.1f Gb/s", Double(result.linkSpeedBps) / 1_000_000_000)
+            : unavailable
+        let read = result.benchmarkReadMBps.map { String(format: "%.1f MB/s", $0) } ?? unavailable
+        let write = result.benchmarkWriteMBps.map { String(format: "%.1f MB/s", $0) } ?? unavailable
+        let text = """
+        \(header)
+        \(languageManager.t("Cable", "Cavo")): \(cableDisplayName(for: result))
+        \(languageManager.t("Connected device", "Dispositivo collegato")): \(result.deviceName)
+        \(languageManager.t("Date", "Data")): \(date)
+        \(languageManager.t("Negotiated Link", "Link Negoziato")): \(link)
+        \(languageManager.t("Configuration", "Configurazione")): \(result.topologyDescription ?? unavailable)
+        \(languageManager.t("Port", "Porta")): \(result.portInfo ?? unavailable)
+        \(languageManager.t("Hub", "Hub")): \(result.hubInfo ?? unavailable)
+        \(languageManager.t("Read", "Lettura")): \(read)
+        \(languageManager.t("Write", "Scrittura")): \(write)
+        """
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(text, forType: .string)
+    }
+
     @ViewBuilder
     private func historicalTrendSection(for result: CableTestResult) -> some View {
         let historicalResults = historyStore.getResultsForCable(label: result.cableLabel).sorted(by: { $0.timestamp < $1.timestamp })
@@ -695,8 +729,11 @@ struct CableLeaderboardView: View {
         defer { pendingImport = nil }
         guard let pendingImport else { return }
         do {
-            let count = try historyStore.importResults(from: pendingImport)
-            importMessage = languageManager.t("Imported \(count) new results.", "Importati \(count) nuovi risultati.")
+            let summary = try historyStore.importResults(from: pendingImport)
+            importMessage = languageManager.t(
+                "Imported \(summary.added) new results. Skipped \(summary.rejectedInvalid) invalid and \(summary.skippedDuplicates) already present.",
+                "Importati \(summary.added) nuovi risultati. Scartati \(summary.rejectedInvalid) non validi e \(summary.skippedDuplicates) già presenti."
+            )
         } catch {
             importMessage = error.localizedDescription
         }

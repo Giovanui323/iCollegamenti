@@ -2,7 +2,7 @@
 set -euo pipefail
 
 APP_BUNDLE="iCollegamenti.app"
-BUILD_SCRATCH="/tmp/codex-builds/cavi-verify"
+BUILD_SCRATCH=".build/app-verify"
 
 swift build -c release --product CAVI --scratch-path "$BUILD_SCRATCH"
 ./build_app.sh

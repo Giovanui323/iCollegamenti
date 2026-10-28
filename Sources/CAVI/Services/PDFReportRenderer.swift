@@ -1,5 +1,5 @@
 import AppKit
-import PDFKit
+import CoreText
 
 @MainActor
 public enum PDFReportRenderer {
@@ -11,47 +11,53 @@ public enum PDFReportRenderer {
         }
     }
 
+    /// A4 at 72 dpi with 42 pt margins. Text is laid out with CoreText and split
+    /// across as many pages as needed, so long reports are never truncated.
     public static func write(report: String, to url: URL) throws {
-        let printInfo = NSPrintInfo()
-        printInfo.paperSize = NSSize(width: 595, height: 842) // A4 at 72 dpi
-        printInfo.leftMargin = 42
-        printInfo.rightMargin = 42
-        printInfo.topMargin = 42
-        printInfo.bottomMargin = 42
-        
+        let pageRect = CGRect(x: 0, y: 0, width: 595, height: 842)
+        let textRect = pageRect.insetBy(dx: 42, dy: 42)
+
+        var mediaBox = pageRect
+        guard let consumer = CGDataConsumer(url: url as CFURL),
+              let context = CGContext(consumer: consumer, mediaBox: &mediaBox, nil)
+        else { throw ExportError.renderingFailed }
+
         let attributedString = formatMarkdown(report)
-        let textStorage = NSTextStorage(attributedString: attributedString)
-        let layoutManager = NSLayoutManager()
-        textStorage.addLayoutManager(layoutManager)
-        
-        // Print setup
-        let printView = NSTextView(frame: NSRect(x: 0, y: 0, width: printInfo.paperSize.width - printInfo.leftMargin - printInfo.rightMargin, height: printInfo.paperSize.height - printInfo.topMargin - printInfo.bottomMargin))
-        printView.textContainer?.containerSize = NSSize(width: printView.bounds.width, height: CGFloat.greatestFiniteMagnitude)
-        printView.textContainer?.widthTracksTextView = true
-        printView.layoutManager?.replaceTextStorage(textStorage)
-        
-        let data = NSMutableData()
-        let operation = NSPrintOperation.pdfOperation(
-            with: printView,
-            inside: printView.bounds,
-            to: data,
-            printInfo: printInfo
-        )
-        operation.showsPrintPanel = false
-        operation.showsProgressPanel = false
-        guard operation.run(), !data.isEmpty else { throw ExportError.renderingFailed }
-        try data.write(to: url, options: .atomic)
+        let framesetter = CTFramesetterCreateWithAttributedString(attributedString)
+        let totalLength = attributedString.length
+        var location = 0
+
+        repeat {
+            let path = CGPath(rect: textRect, transform: nil)
+            let frame = CTFramesetterCreateFrame(
+                framesetter,
+                CFRange(location: location, length: 0),
+                path,
+                nil
+            )
+            let visibleLength = CTFrameGetVisibleStringRange(frame).length
+            // A zero-length page means the text can no longer fit; stop instead of looping forever.
+            guard visibleLength > 0 else { break }
+
+            context.beginPDFPage(nil)
+            CTFrameDraw(frame, context)
+            context.endPDFPage()
+            location += visibleLength
+        } while location < totalLength
+
+        guard location > 0 else { throw ExportError.renderingFailed }
+        context.closePDF()
     }
 
     private static func formatMarkdown(_ markdown: String) -> NSAttributedString {
         let lines = markdown.components(separatedBy: .newlines)
         let result = NSMutableAttributedString()
-        
+
         let titleFont = NSFont.systemFont(ofSize: 18, weight: .bold)
         let headerFont = NSFont.systemFont(ofSize: 14, weight: .bold)
         let bodyFont = NSFont.systemFont(ofSize: 11, weight: .regular)
         let boldBodyFont = NSFont.systemFont(ofSize: 11, weight: .bold)
-        
+
         for line in lines {
             if line.hasPrefix("# ") {
                 let text = String(line.dropFirst(2)) + "\n"
@@ -84,7 +90,7 @@ public enum PDFReportRenderer {
                 result.append(NSAttributedString(string: text, attributes: [.font: bodyFont]))
             }
         }
-        
+
         return result
     }
 }

@@ -48,10 +48,10 @@ artifacts/
 *.cert
 *.pfx
 *.secret
-*credentials*
-*token*
-*auth*
-*private*
+# Credential files by name only: broad words like "auth" or "token" would also hide Swift sources
+*credentials*.json
+*secret*.json
+*token*.json
 
 # Exported user diagnostic reports
 *.csv

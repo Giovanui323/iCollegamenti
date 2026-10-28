@@ -3,7 +3,7 @@ set -e
 
 APP_VERSION="2.0"
 APP_BUNDLE="iCollegamenti.app"
-BUILD_SCRATCH="/tmp/codex-builds/cavi-release"
+BUILD_SCRATCH=".build/app-release"
 
 echo "Building CAVI executable..."
 swift build -c release --product CAVI --scratch-path "$BUILD_SCRATCH"

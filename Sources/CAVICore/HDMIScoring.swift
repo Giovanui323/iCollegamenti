@@ -9,6 +9,8 @@ public struct HDMIConnectionScore: Codable, Hashable, Sendable {
     public let hdr: Int
     public let audio: Int
     public let handshake: Int
+    /// False when no link capacity was known, so `bandwidth` is not part of `overall`.
+    public var bandwidthObserved: Bool = true
 }
 
 public enum HDMIScoreLevel: String, Codable, Hashable, Sendable {

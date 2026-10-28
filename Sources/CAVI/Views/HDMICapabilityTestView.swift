@@ -5,6 +5,7 @@ struct HDMICapabilityTestView: View {
     @Environment(HDMICapabilityTestService.self) private var capabilityTest
     @Environment(HDMIStressTestService.self) private var stressTest
     @Environment(HDMIDisplayDiscoveryService.self) private var hdmiService
+    @Environment(EDIDReaderService.self) private var edidReader
     @Environment(LanguageManager.self) private var lm
     
     @State private var stressDurationMins: Int = 5
@@ -87,19 +88,31 @@ struct HDMICapabilityTestView: View {
     @ViewBuilder
     private func compatibilityMatrixSection(display: HDMIDisplayDevice) -> some View {
         GroupBox(lm.t("Compatibility Matrix", "Matrice di Compatibilità")) {
-            let matrix = capabilityTest.compatibilityMatrix(for: display.displayID)
+            let matrix = capabilityTest.compatibilityMatrix(for: display.displayID, edid: edidReader.parsedEDID(for: display.displayID))
             
             if matrix.isEmpty {
-                Text(lm.t("Run test to populate matrix.", "Esegui il test per popolare la matrice."))
+                Text(lm.t("No EDID modes available. Run the test to populate the matrix.", "Nessuna modalità EDID disponibile. Esegui il test per popolare la matrice."))
                     .foregroundStyle(.secondary)
                     .frame(maxWidth: .infinity, minHeight: 200)
             } else {
-                List(matrix, id: \.resolution) { row in
+                List(matrix) { row in
                     HStack {
-                        Text(row.resolution).frame(width: 150, alignment: .leading)
-                        Text(row.refreshRate).frame(width: 100, alignment: .leading)
+                        Text("\(row.mode.width)×\(row.mode.height)")
+                            .fontWeight(row.mode.isNative ? .semibold : .regular)
+                            .frame(width: 110, alignment: .leading)
+                        Text("\(Int(row.mode.refreshRate.rounded())) Hz").frame(width: 60, alignment: .leading)
+                        Text(String(format: "%.1f Gb/s", row.requiredBandwidthGbps))
+                            .font(.caption.monospacedDigit())
+                            .foregroundStyle(row.fitsAdvertisedLink == false ? .orange : .secondary)
+                            .frame(width: 80, alignment: .leading)
+                            .help(linkHelp(row.fitsAdvertisedLink))
+                        if row.mode.source == .testedByMac {
+                            Text(lm.t("not in EDID", "non nell'EDID"))
+                                .font(.caption2)
+                                .foregroundStyle(.secondary)
+                        }
                         Spacer()
-                        statusIcon(for: row.status)
+                        statusIcon(for: row.testStatus)
                     }
                 }
                 .frame(minHeight: 300)
@@ -180,6 +193,14 @@ struct HDMICapabilityTestView: View {
         }
     }
     
+    private func linkHelp(_ fits: Bool?) -> String {
+        switch fits {
+        case true?: lm.t("Fits the link capacity the display states (8-bit RGB).", "Rientra nella capacità del link dichiarata dal monitor (RGB 8 bit).")
+        case false?: lm.t("Exceeds the link capacity the display states: needs subsampling or compression.", "Supera la capacità del link dichiarata dal monitor: serve sottocampionamento o compressione.")
+        case nil: lm.t("The display does not state a link capacity.", "Il monitor non dichiara la capacità del link.")
+        }
+    }
+
     private func statusIcon(for status: HDMICapabilityTestStatus) -> some View {
         Group {
             switch status {

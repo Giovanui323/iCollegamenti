@@ -244,6 +244,18 @@ public struct HDMIDisplayDevice: Identifiable, Hashable, Sendable, Codable {
     public var resolutionFormatted: String {
         "\(widthPixels) x \(heightPixels) @ \(Int(round(refreshRateHz)))Hz"
     }
+
+    /// Copies what the display's EDID states about itself onto the device.
+    public mutating func apply(edid: ParsedEDID) {
+        parsedEDID = edid
+        manufacturerFromEDID = edid.manufacturerName ?? edid.manufacturerCode
+        modelFromEDID = edid.manufactureName
+        serialFromEDID = edid.serialString
+        nativeResolution = edid.nativeResolution
+        supportsHDR10 = edid.supportsHDR10
+        supportsHLG = edid.supportsHLG
+        vrrRange = edid.ctaExtension?.vrrRange
+    }
 }
 
 // MARK: - Models
@@ -743,21 +755,7 @@ public struct AdvancedBenchmarkRecord: Codable, Hashable, Sendable, Identifiable
 
 // MARK: - HDMI Models
 
-public struct DiagnosisWizardStep: Codable, Hashable, Sendable {
-    public let name: String
-    public let passed: Bool
-    public let resultDescription: String
-    public init(name: String, passed: Bool, resultDescription: String) {
-        self.name = name
-        self.passed = passed
-        self.resultDescription = resultDescription
-    }
-}
-
 extension HDMIChainDiagnosis {
-    public var wizardSteps: [DiagnosisWizardStep] {
-        return []
-    }
     public var finalVerdict: String? {
         return self.explanation
     }
@@ -766,16 +764,3 @@ extension HDMIChainDiagnosis {
     }
 }
 
-public struct HDMICompatibilityRow: Codable, Hashable, Sendable, Identifiable {
-    public let id: UUID
-    public let resolution: String
-    public let refreshRate: String
-    public let status: HDMICapabilityTestStatus
-    
-    public init(id: UUID = UUID(), resolution: String, refreshRate: String, status: HDMICapabilityTestStatus) {
-        self.id = id
-        self.resolution = resolution
-        self.refreshRate = refreshRate
-        self.status = status
-    }
-}

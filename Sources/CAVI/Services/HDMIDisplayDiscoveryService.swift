@@ -13,8 +13,13 @@ public final class HDMIDisplayDiscoveryService {
     public var selectedDisplayID: CGDirectDisplayID?
     private var isMonitoring = false
     private var refreshTask: Task<Void, Never>?
+    private weak var edidReader: EDIDReaderService?
     
     public init() {
+    }
+
+    func attachEDIDReader(_ reader: EDIDReaderService) {
+        edidReader = reader
     }
     
     public func startMonitoring() {
@@ -74,7 +79,7 @@ public final class HDMIDisplayDiscoveryService {
             
             let grade = HDMICableGrade.required(forEstimatedBandwidthGbps: estimatedGbps)
             
-            let device = HDMIDisplayDevice(
+            var device = HDMIDisplayDevice(
                 displayID: displayID,
                 displayName: displayName,
                 widthPixels: width,
@@ -87,6 +92,9 @@ public final class HDMIDisplayDiscoveryService {
                 cableGrade: grade
             )
             
+            if let edid = edidReader?.parsedEDID(for: displayID) {
+                device.apply(edid: edid)
+            }
             detected.append(device)
         }
         

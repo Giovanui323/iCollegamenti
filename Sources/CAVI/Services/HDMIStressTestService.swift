@@ -10,6 +10,8 @@ public final class HDMIStressTestService {
     public private(set) var currentResult: HDMIStressTestResult?
     
     private var monitoringDisplayID: CGDirectDisplayID?
+    /// Display the last result belongs to, so another monitor never shows it.
+    private var resultDisplayID: CGDirectDisplayID?
     private var elapsedSeconds: Int = 0
     private var timer: Timer?
     private var initialMode: CGDisplayMode?
@@ -32,8 +34,8 @@ public final class HDMIStressTestService {
         initialMode = CGDisplayCopyDisplayMode(displayID)
         initialRefresh = initialMode?.refreshRate ?? 0
         lastActive = true
-        lastWidth = initialMode?.width ?? 0
-        lastHeight = initialMode?.height ?? 0
+        lastWidth = initialMode?.pixelWidth ?? 0
+        lastHeight = initialMode?.pixelHeight ?? 0
         lastRefresh = initialRefresh
 
         timer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { [weak self] _ in
@@ -47,21 +49,22 @@ public final class HDMIStressTestService {
                     if !isActive {
                         self.recordEvent(.signalLoss, "Display signal lost at \(self.elapsedSeconds)s")
                     } else {
-                        self.recordEvent(.disconnect, "Display signal restored at \(self.elapsedSeconds)s")
+                        // The loss was already counted; the restore is not a second disconnect.
+                        self.recordEvent(.signalRestore, "Display signal restored at \(self.elapsedSeconds)s")
                     }
                     self.lastActive = isActive
                 }
 
                 if let currentMode = CGDisplayCopyDisplayMode(displayID) {
-                    let resolutionChanged = currentMode.width != self.lastWidth || currentMode.height != self.lastHeight
+                    let resolutionChanged = currentMode.pixelWidth != self.lastWidth || currentMode.pixelHeight != self.lastHeight
                     if resolutionChanged {
-                        self.recordEvent(.modeChange, "Resolution changed to \(currentMode.width)x\(currentMode.height)")
+                        self.recordEvent(.modeChange, "Resolution changed to \(currentMode.pixelWidth)x\(currentMode.pixelHeight)")
                     }
                     if currentMode.refreshRate != self.lastRefresh {
                         self.recordEvent(.renegotiation, "Refresh changed to \(currentMode.refreshRate) Hz")
                     }
-                    self.lastWidth = currentMode.width
-                    self.lastHeight = currentMode.height
+                    self.lastWidth = currentMode.pixelWidth
+                    self.lastHeight = currentMode.pixelHeight
                     self.lastRefresh = currentMode.refreshRate
                 }
                 
@@ -88,7 +91,7 @@ public final class HDMIStressTestService {
         
         currentResult = HDMIStressTestResult(
             id: UUID(),
-            mode: initialMode.map { "\($0.width)x\($0.height)@\(Int($0.refreshRate))Hz" } ?? "Unknown",
+            mode: initialMode.map { "\($0.pixelWidth)x\($0.pixelHeight)@\(Int($0.refreshRate.rounded()))Hz" } ?? "Unknown",
             durationSeconds: durationSeconds,
             disconnects: disconnects,
             renegotiations: renegotiations,
@@ -97,6 +100,7 @@ public final class HDMIStressTestService {
             stabilityScore: stabilityScore,
             events: events
         )
+        resultDisplayID = monitoringDisplayID
     }
 
     public func stopStressTest() {
@@ -107,8 +111,8 @@ public final class HDMIStressTestService {
     public func start(for displayID: CGDirectDisplayID, durationMinutes: Int) {
         startStressTest(displayID: displayID, durationSeconds: durationMinutes * 60)
     }
-    public func events(for displayID: CGDirectDisplayID) -> [HDMIStressEvent] { events }
-    public func result(for displayID: CGDirectDisplayID) -> HDMIStressTestResult? { currentResult }
+    public func events(for displayID: CGDirectDisplayID) -> [HDMIStressEvent] { monitoringDisplayID == displayID ? events : [] }
+    public func result(for displayID: CGDirectDisplayID) -> HDMIStressTestResult? { resultDisplayID == displayID ? currentResult : nil }
     
     // Add missing stop() function to match old protocol just in case
     public func stop(for displayID: CGDirectDisplayID) {

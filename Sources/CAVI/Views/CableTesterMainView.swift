@@ -729,6 +729,8 @@ struct CableTesterMainView: View {
             return languageManager.t("Possible connection-chain limitation", "Possibile limitazione nella catena")
         case .unknown:
             return languageManager.t("Link speed unavailable", "Velocità del link non disponibile")
+        case .none where analysis.diagnosis.lacksReferenceMeasurement:
+            return languageManager.t("Missing reference measurement", "Misurazione di riferimento mancante")
         case .none:
             return languageManager.t("Connection consistent with available evidence", "Connessione coerente con le evidenze disponibili")
         case .bridge:

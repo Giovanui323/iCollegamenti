@@ -125,16 +125,6 @@ public final class BottleneckAnalyzerService {
             )
 
         case .unknown:
-            if diagnosis.referenceMaxSpeedBps == nil && diagnosis.currentLinkSpeedBps != nil {
-                return (
-                    language == .english ? "Missing reference measurement" : "Misurazione di riferimento mancante",
-                    language == .english
-                        ? "Connected at \(current). Connect the device with a known-good cable to establish a reference measurement."
-                        : "Connesso a \(current). Connetti il dispositivo con un cavo sicuramente funzionante per stabilire una misurazione di riferimento.",
-                    [],
-                    .none
-                )
-            }
             return (
                 language == .english ? "Link speed unavailable" : "Velocità del link non disponibile",
                 language == .english
@@ -145,6 +135,17 @@ public final class BottleneckAnalyzerService {
             )
 
         case .none:
+            // The engine reports `.none` when nothing could be compared; say why instead of "consistent".
+            if diagnosis.lacksReferenceMeasurement {
+                return (
+                    language == .english ? "Missing reference measurement" : "Misurazione di riferimento mancante",
+                    language == .english
+                        ? "Connected at \(current). Connect the device with a known-good cable to establish a reference measurement."
+                        : "Connesso a \(current). Connetti il dispositivo con un cavo sicuramente funzionante per stabilire una misurazione di riferimento.",
+                    [],
+                    .none
+                )
+            }
             return (
                 language == .english ? "Connection consistent with available evidence" : "Connessione coerente con le evidenze disponibili",
                 language == .english

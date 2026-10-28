@@ -56,6 +56,7 @@ struct CAVIApp: App {
                         await usbVendorCatalog.update()
                         discoveryService.refreshDevices()
                     }
+                    hdmiService.attachEDIDReader(edidReaderService)
                     hdmiService.startMonitoring()
                     macChargingService.startMonitoring()
                     NSApplication.shared.activate(ignoringOtherApps: true)

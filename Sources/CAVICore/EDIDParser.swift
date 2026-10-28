@@ -118,6 +118,8 @@ public struct HDMIVendorBlock: Codable, Hashable, Sendable {
     public let supportsDeepColor36bit: Bool
     public let supportsDeepColor48bit: Bool
     public let supportsAI: Bool
+    /// Fixed Rate Link capacity advertised in the HDMI Forum block (HDMI 2.1), in Gb/s.
+    public var maxFRLRateGbps: Int? = nil
 }
 
 public struct HDRCapabilities: Codable, Hashable, Sendable {
@@ -276,6 +278,8 @@ public enum EDIDParser {
                 var vrrRange: VRRRange? = nil
                 var colorimetry: [String] = []
                 var supportsYCbCr420 = false
+                var forumMaxTMDSClockMHz: Int? = nil
+                var forumMaxFRLRateGbps: Int? = nil
                 
                 var idx = 4
                 let endIdx = (dtdOffset > 4 && dtdOffset <= 127) ? dtdOffset : extData.count
@@ -343,17 +347,8 @@ public enum EDIDParser {
                             } else if oui == 0xC45DD8 {
                                 blockName = "HDMI Forum Vendor-Specific Data Block"
                                 let forum = parseHDMIForumVSDB(blockBytes)
-                                if let maxTMDS = forum.maxTMDSClockMHz {
-                                    let current = hdmiVendorBlock
-                                    hdmiVendorBlock = HDMIVendorBlock(
-                                        maxTMDSClockMHz: max(maxTMDS, current?.maxTMDSClockMHz ?? 0),
-                                        supports3D: current?.supports3D ?? false,
-                                        supportsDeepColor30bit: current?.supportsDeepColor30bit ?? false,
-                                        supportsDeepColor36bit: current?.supportsDeepColor36bit ?? false,
-                                        supportsDeepColor48bit: current?.supportsDeepColor48bit ?? false,
-                                        supportsAI: current?.supportsAI ?? false
-                                    )
-                                }
+                                forumMaxTMDSClockMHz = forum.maxTMDSClockMHz
+                                forumMaxFRLRateGbps = forum.maxFRLRateGbps
                                 if forum.supportsYCbCr420DeepColor { supportsYCbCr420 = true }
                                 if let range = forum.vrrRange { vrrRange = range }
                             }
@@ -408,6 +403,21 @@ public enum EDIDParser {
                     idx += 1 + length
                 }
                 
+                // The HDMI Forum block may precede or follow the HDMI 1.x block, so merge once both are read.
+                if forumMaxTMDSClockMHz != nil || forumMaxFRLRateGbps != nil {
+                    let current = hdmiVendorBlock
+                    var merged = HDMIVendorBlock(
+                        maxTMDSClockMHz: [forumMaxTMDSClockMHz, current?.maxTMDSClockMHz].compactMap { $0 }.max(),
+                        supports3D: current?.supports3D ?? false,
+                        supportsDeepColor30bit: current?.supportsDeepColor30bit ?? false,
+                        supportsDeepColor36bit: current?.supportsDeepColor36bit ?? false,
+                        supportsDeepColor48bit: current?.supportsDeepColor48bit ?? false,
+                        supportsAI: current?.supportsAI ?? false
+                    )
+                    merged.maxFRLRateGbps = forumMaxFRLRateGbps
+                    hdmiVendorBlock = merged
+                }
+
                 ctaExtension = CTAExtension(
                     revision: revision,
                     supportsYCbCr444: ctaSupportsYCbCr444,
@@ -557,8 +567,11 @@ public enum EDIDParser {
     }
 
     /// HDMI Forum VSDB (HDMI 2.x): max TMDS character rate, 4:2:0 deep colour and VRR range.
-    private static func parseHDMIForumVSDB(_ bytes: [UInt8]) -> (maxTMDSClockMHz: Int?, supportsYCbCr420DeepColor: Bool, vrrRange: VRRRange?) {
+    private static func parseHDMIForumVSDB(_ bytes: [UInt8]) -> (maxTMDSClockMHz: Int?, maxFRLRateGbps: Int?, supportsYCbCr420DeepColor: Bool, vrrRange: VRRRange?) {
         let maxTMDS = bytes.count > 4 && bytes[4] != 0 ? Int(bytes[4]) * 5 : nil
+        // Max_FRL_Rate: 1 = 3 lanes × 3 Gb/s … 6 = 4 lanes × 12 Gb/s.
+        let frlRates = [1: 9, 2: 18, 3: 24, 4: 32, 5: 40, 6: 48]
+        let maxFRL = bytes.count > 7 ? frlRates[Int(bytes[7] >> 4)] : nil
         let deepColor420 = bytes.count > 6 && bytes[6] & 0x07 != 0
         var vrr: VRRRange? = nil
         if bytes.count > 10 {
@@ -568,7 +581,7 @@ public enum EDIDParser {
                 vrr = VRRRange(minRefreshHz: minimum, maxRefreshHz: maximum, supportsAdaptiveSync: true)
             }
         }
-        return (maxTMDS, deepColor420, vrr)
+        return (maxTMDS, maxFRL, deepColor420, vrr)
     }
 
     private static func parseColorimetry(_ bytes: [UInt8]) -> [String] {

@@ -2,7 +2,7 @@ import XCTest
 @testable import CAVICore
 
 /// Builds EDID blobs byte by byte so every field the parser reads is known.
-private enum EDIDFixture {
+enum EDIDFixture {
     static let header: [UInt8] = [0x00, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0x00]
 
     /// 3840x2160 @ 60 Hz (CTA timing: 594 MHz, 4400 x 2250 total).
@@ -80,6 +80,16 @@ private enum EDIDFixture {
     }
 
     static var fullEDID: [UInt8] { baseBlock() + ctaBlock() }
+
+    /// Sets the last byte of every 128-byte block so the block sums to zero.
+    static func withChecksums(_ bytes: [UInt8]) -> [UInt8] {
+        var bytes = bytes
+        for start in stride(from: 0, to: bytes.count - 127, by: 128) {
+            let sum = bytes[start..<(start + 127)].reduce(UInt8(0), &+)
+            bytes[start + 127] = 0 &- sum
+        }
+        return bytes
+    }
 }
 
 final class EDIDParserTests: XCTestCase {

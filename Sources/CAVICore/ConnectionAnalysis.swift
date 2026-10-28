@@ -155,6 +155,14 @@ public struct ConnectionDiagnosis: Codable, Hashable, Sendable {
     }
 }
 
+public extension ConnectionDiagnosis {
+    /// A link was observed but there is no earlier measurement to compare it with,
+    /// so no limitation can be judged either way.
+    var lacksReferenceMeasurement: Bool {
+        currentLinkSpeedBps != nil && referenceMaxSpeedBps == nil
+    }
+}
+
 public enum ConnectionDiagnosisEngine {
     public static func cableCompatibilityCheck(deviceCapabilityBps: UInt64?, negotiatedBps: UInt64?, powerRequirementWatts: Double?, powerCapabilityWatts: Double?) -> CableCompatibilityResult {
         let dataLimited = (deviceCapabilityBps != nil && negotiatedBps != nil) ? negotiatedBps! < deviceCapabilityBps! : false

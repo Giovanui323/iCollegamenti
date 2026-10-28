@@ -9,6 +9,8 @@ public final class HDMICapabilityTestService {
     public private(set) var testResults: [HDMICapabilityTestEntry] = []
     public private(set) var maximumStableMode: HDMICapabilityTestEntry?
     private var currentTestIndex: Int = 0
+    /// Display the results belong to, so another monitor never shows them.
+    private var testedDisplayID: CGDirectDisplayID?
 
     public init() {}
 
@@ -20,6 +22,7 @@ public final class HDMICapabilityTestService {
         isRunning = true
         testResults = []
         maximumStableMode = nil
+        testedDisplayID = displayID
         defer { isRunning = false }
 
         let allModes = CGDisplayCopyAllDisplayModes(displayID, [kCGDisplayShowDuplicateLowResolutionModes: true] as CFDictionary) as? [CGDisplayMode] ?? []
@@ -80,16 +83,19 @@ public final class HDMICapabilityTestService {
     public func isRunning(for displayID: CGDirectDisplayID) -> Bool { isRunning }
     public func startTest(for displayID: CGDirectDisplayID) { Task { await runProgressiveTest(displayID: displayID) } }
     public func stopTest(for displayID: CGDirectDisplayID) { stopTest() }
-    public func results(for displayID: CGDirectDisplayID) -> [HDMICapabilityTestEntry] { return testResults }
-    public func highestVerifiedMode(for displayID: CGDirectDisplayID) -> HDMICapabilityTestEntry? { return maximumStableMode }
-    /// Not built yet: returning an empty list tells the view there is no data, rather than a made-up matrix.
-    public func compatibilityMatrix(for displayID: CGDirectDisplayID) -> [HDMICompatibilityRow] { return [] }
+    public func results(for displayID: CGDirectDisplayID) -> [HDMICapabilityTestEntry] { testedDisplayID == displayID ? testResults : [] }
+    public func highestVerifiedMode(for displayID: CGDirectDisplayID) -> HDMICapabilityTestEntry? { testedDisplayID == displayID ? maximumStableMode : nil }
+    /// Modes the EDID advertises, joined with what the progressive test observed on this display.
+    public func compatibilityMatrix(for displayID: CGDirectDisplayID, edid: ParsedEDID?) -> [HDMIModeCompatibility] {
+        HDMICompatibilityMatrixGenerator.matrix(edid: edid, testResults: results(for: displayID))
+    }
 
     /// Share of the tested modes that macOS kept active. Zero when nothing has been tested yet.
     public func stabilityScore(for displayID: CGDirectDisplayID) -> Double {
-        guard !testResults.isEmpty else { return 0 }
-        let kept = testResults.filter { $0.status == .pass }.count
-        return Double(kept) / Double(testResults.count) * 100
+        let results = results(for: displayID)
+        guard !results.isEmpty else { return 0 }
+        let kept = results.filter { $0.status == .pass }.count
+        return Double(kept) / Double(results.count) * 100
     }
 
     private static func apply(_ mode: CGDisplayMode, to displayID: CGDirectDisplayID) -> Bool {

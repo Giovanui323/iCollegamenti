@@ -27,6 +27,7 @@ public final class HDMIDisplayAnalysisService {
     public private(set) var hdmiAudioDevices: [HDMIAudioDevice] = []
     public private(set) var connectionTransport: String = "Unknown"
     public private(set) var fallbackDetection: HDMIFallbackDetection?
+    private var analyzedDisplayID: CGDirectDisplayID?
     
     public init() {}
     
@@ -38,13 +39,16 @@ public final class HDMIDisplayAnalysisService {
             self.allSupportedModes = modes
         }
         
-        let width = mode.width
-        let height = mode.height
-        let refreshRate = mode.refreshRate
+        // `width`/`height` are points; on a HiDPI mode the link carries the pixel size.
+        let width = mode.pixelWidth
+        let height = mode.pixelHeight
+        var refreshRate = mode.refreshRate
         
         var isHDR = false
         var bitDepth = 8
         if let screen = NSScreen.screens.first(where: { ($0.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? CGDirectDisplayID) == displayID }) {
+            // Some displays report 0 Hz in their mode; the screen still knows its frame rate.
+            if refreshRate == 0 { refreshRate = Double(screen.maximumFramesPerSecond) }
             isHDR = screen.maximumPotentialExtendedDynamicRangeColorComponentValue > 1.0
             if isHDR || screen.depth == .sixtyfourBitRGB { bitDepth = 10 }
         }
@@ -70,6 +74,7 @@ public final class HDMIDisplayAnalysisService {
             bandwidthRequirement: calc
         )
         self.currentSignal = config
+        self.analyzedDisplayID = displayID
         
         self.fallbackDetection = nil
         if let edid = edid {
@@ -91,7 +96,8 @@ public final class HDMIDisplayAnalysisService {
     }
     
     public func currentConfiguration(for displayID: CGDirectDisplayID) -> HDMISignalConfiguration? {
-        return currentSignal
+        // The cached signal belongs to the last analysed display only.
+        analyzedDisplayID == displayID ? currentSignal : nil
     }
     
     public func currentDiagnosis(for displayID: CGDirectDisplayID) -> HDMIChainDiagnosis? {

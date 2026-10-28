@@ -17,6 +17,7 @@ public final class DiskIOMonitorService {
     private var lastBytesRead: UInt64 = 0
     private var lastBytesWritten: UInt64 = 0
     private var lastSampleTime: CFAbsoluteTime = 0
+    private var hasBaseline = false
     private var currentBSDName: String = ""
     
     public init() {}
@@ -26,15 +27,15 @@ public final class DiskIOMonitorService {
         stopMonitoring()
         
         // Get the whole disk BSD name (e.g. "disk7" from "disk7s1")
-        let wholeDisk = bsdName.replacingOccurrences(of: #"s\d+$"#, with: "", options: .regularExpression)
+        // APFS snapshots nest slices ("disk3s1s1"), so take the leading "diskN" instead of stripping one suffix.
+        let wholeDisk = bsdName.range(of: #"^disk\d+"#, options: .regularExpression).map { String(bsdName[$0]) } ?? bsdName
         currentBSDName = wholeDisk
         isMonitoring = true
         
         // Initialize counters
+        hasBaseline = false
         if let stats = readDiskStatistics(bsdName: wholeDisk) {
-            lastBytesRead = stats.bytesRead
-            lastBytesWritten = stats.bytesWritten
-            lastSampleTime = CFAbsoluteTimeGetCurrent()
+            setBaseline(stats, at: CFAbsoluteTimeGetCurrent())
         }
         
         monitorTask = Task { [weak self] in
@@ -56,10 +57,22 @@ public final class DiskIOMonitorService {
         maximumWriteMBps = 0.0
     }
     
+    private func setBaseline(_ stats: DiskStats, at time: CFAbsoluteTime) {
+        lastBytesRead = stats.bytesRead
+        lastBytesWritten = stats.bytesWritten
+        lastSampleTime = time
+        hasBaseline = true
+    }
+
     private func sample() {
         guard isMonitoring else { return }
         
         let now = CFAbsoluteTimeGetCurrent()
+        // Without a first reading the cumulative counters since boot would be reported as one sample.
+        guard hasBaseline else {
+            if let stats = readDiskStatistics(bsdName: currentBSDName) { setBaseline(stats, at: now) }
+            return
+        }
         let elapsed = now - lastSampleTime
         guard elapsed > 0.1 else { return } // Avoid division by near-zero
         

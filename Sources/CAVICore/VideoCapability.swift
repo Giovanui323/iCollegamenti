@@ -54,7 +54,7 @@ public struct VideoCapabilityAssessment: Codable, Hashable, Sendable {
 
 public enum VideoCapabilityEstimator {
     public static func assess(sustainedWriteMBps: Double) -> VideoCapabilityAssessment {
-        let writeMBps = max(0, sustainedWriteMBps)
+        let writeMBps = sustainedWriteMBps.isFinite ? max(0, sustainedWriteMBps) : 0
         let capabilities = VideoWorkflow.allCases.map { workflow in
             let ratio = writeMBps / workflow.estimatedRequiredMBps
             let status: VideoCapabilityStatus

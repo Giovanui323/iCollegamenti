@@ -45,7 +45,7 @@ final class HardwareEventLog {
     }
 
     func recordBenchmark(kind: HardwareEventKind, mountPath: String, detail: String? = nil) {
-        guard [.benchmarkStarted, .benchmarkCompleted, .benchmarkFailed].contains(kind) else { return }
+        guard [.benchmarkStarted, .benchmarkCompleted, .benchmarkFailed, .benchmarkCancelled].contains(kind) else { return }
         let displayName = URL(fileURLWithPath: mountPath).lastPathComponent
         append([HardwareEvent(
             kind: kind,
@@ -94,6 +94,8 @@ final class HardwareEventLog {
             return "Benchmark completed for \(event.displayName)"
         case .benchmarkFailed:
             return "Benchmark interrupted for \(event.displayName): \(event.detail ?? "unknown error")"
+        case .benchmarkCancelled:
+            return "Benchmark cancelled for \(event.displayName)"
         }
     }
 

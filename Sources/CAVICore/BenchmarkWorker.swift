@@ -42,8 +42,10 @@ public struct BenchmarkWorker: Sendable {
         await progress(.init(phase: .preparing, fractionCompleted: 0))
         let fm = FileManager.default; var isDirectory = ObjCBool(false)
         guard fm.fileExists(atPath: mountPath, isDirectory: &isDirectory), isDirectory.boolValue else { throw BenchmarkError.invalidPath }
+        guard testSizeBytes > 0 else { throw BenchmarkError.invalidPath }
         guard let free = try fm.attributesOfFileSystem(forPath: mountPath)[.systemFreeSize] as? NSNumber else { throw BenchmarkError.invalidPath }
-        guard free.uint64Value >= testSizeBytes * 2 else { throw BenchmarkError.insufficientSpace }
+        let (requiredSpace, overflow) = testSizeBytes.multipliedReportingOverflow(by: 2)
+        guard !overflow, free.uint64Value >= requiredSpace else { throw BenchmarkError.insufficientSpace }
         let path = (mountPath as NSString).appendingPathComponent(".cavi-benchmark-\(UUID().uuidString).bin")
         defer { try? fm.removeItem(atPath: path) }
         let size = 1_048_576, buffer = [UInt8](repeating: 0xAA, count: size); let started = Date()
@@ -52,11 +54,11 @@ public struct BenchmarkWorker: Sendable {
         var written: UInt64 = 0
         while written < testSizeBytes { try Task.checkCancellation(); let count = Int(min(UInt64(size), testSizeBytes - written)); let result = write(writeFD, buffer, count); guard result > 0 else { throw BenchmarkError.fileIOError(result == 0 ? "Scrittura incompleta" : String(cString: strerror(errno))) }; written += UInt64(result); await progress(.init(phase: .writing, fractionCompleted: Double(written) / Double(testSizeBytes) * 0.5)) }
         guard fullSync(writeFD) == 0 else { throw BenchmarkError.fileIOError(String(cString: strerror(errno))) }
-        let writeDuration = CFAbsoluteTimeGetCurrent() - writeStart
+        let writeDuration = max(CFAbsoluteTimeGetCurrent() - writeStart, 0.000_001)
         let readFD = open(path, O_RDONLY); guard readFD != -1 else { throw BenchmarkError.fileIOError(String(cString: strerror(errno))) }; defer { close(readFD) }; _ = fcntl(readFD, F_NOCACHE, 1)
         var readBuffer = [UInt8](repeating: 0, count: size), readTotal: UInt64 = 0; let readStart = CFAbsoluteTimeGetCurrent()
         while readTotal < testSizeBytes { try Task.checkCancellation(); let count = Int(min(UInt64(size), testSizeBytes - readTotal)); let result = read(readFD, &readBuffer, count); guard result > 0 else { throw BenchmarkError.fileIOError(result == 0 ? "Lettura incompleta" : String(cString: strerror(errno))) }; readTotal += UInt64(result); await progress(.init(phase: .reading, fractionCompleted: 0.5 + Double(readTotal) / Double(testSizeBytes) * 0.5)) }
-        let readDuration = CFAbsoluteTimeGetCurrent() - readStart
+        let readDuration = max(CFAbsoluteTimeGetCurrent() - readStart, 0.000_001)
         await progress(.init(phase: .finished, fractionCompleted: 1))
         return .init(sequentialReadMBps: Double(readTotal) / readDuration / 1_000_000, sequentialWriteMBps: Double(written) / writeDuration / 1_000_000, durationSeconds: Date().timeIntervalSince(started))
     }
@@ -82,7 +84,9 @@ public extension BenchmarkWorker {
 
         let byteCount = testSizeBytes ?? configuration.preset.sizeBytes
         guard byteCount > 0 else { throw BenchmarkError.invalidPath }
-        let requiredSpace = requiredFreeBytes ?? byteCount * 2
+        let (doubledByteCount, overflow) = byteCount.multipliedReportingOverflow(by: 2)
+        guard requiredFreeBytes != nil || !overflow else { throw BenchmarkError.insufficientSpace }
+        let requiredSpace = requiredFreeBytes ?? doubledByteCount
         guard let free = try fileManager.attributesOfFileSystem(forPath: mountPath)[.systemFreeSize] as? NSNumber,
               free.uint64Value >= requiredSpace else {
             throw BenchmarkError.insufficientSpace
@@ -281,7 +285,9 @@ public extension BenchmarkWorker {
                     readMBps: isWrite ? nil : throughput,
                     writeMBps: isWrite ? throughput : nil
                 ))
-                await progress(.init(phase: isWrite ? .writing : .reading, fractionCompleted: Double(operation + 1) / Double(operationCount)))
+                let fraction = Double(operation + 1) / Double(operationCount)
+                // A read test first fills the file (0–50 %), so its measured phase must not restart the bar.
+                await progress(.init(phase: isWrite ? .writing : .reading, fractionCompleted: isWrite ? fraction : 0.5 + fraction * 0.5))
             }
         }
         if isWrite, fullSync(fd) != 0 { throw ioError() }
@@ -318,7 +324,7 @@ public extension BenchmarkWorker {
             try positionedWriteAll(fd: fd, bytes: writeBuffer, offset: writeOffset)
             try positionedReadAll(fd: fd, bytes: &readBuffer, offset: readOffset)
             if index.isMultiple(of: 256) || index == operations - 1 {
-                await progress(.init(phase: .writing, fractionCompleted: Double(index + 1) / Double(operations)))
+                await progress(.init(phase: .writing, fractionCompleted: 0.5 + Double(index + 1) / Double(operations) * 0.5))
             }
         }
         guard fullSync(fd) == 0 else { throw ioError() }
@@ -349,7 +355,7 @@ public extension BenchmarkWorker {
             try positionedReadAll(fd: fd, bytes: &buffer, offset: off_t(index * blockSize))
             latencies.append((CFAbsoluteTimeGetCurrent() - started) * 1_000)
             if index.isMultiple(of: 256) || index == operations - 1 {
-                await progress(.init(phase: .reading, fractionCompleted: Double(index + 1) / Double(operations)))
+                await progress(.init(phase: .reading, fractionCompleted: 0.5 + Double(index + 1) / Double(operations) * 0.5))
             }
         }
 

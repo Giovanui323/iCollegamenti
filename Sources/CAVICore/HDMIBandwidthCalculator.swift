@@ -88,6 +88,12 @@ public enum HDMIBandwidthCalculator {
     }
     
     public static func headroom(required: Double, available: Double) -> BandwidthHeadroom {
+        // A zero or invalid requirement would divide by zero; an empty link exceeds nothing
+        // only when it has capacity left, otherwise there is no headroom at all.
+        guard required.isFinite, available.isFinite, required > 0 else {
+            let fits = available.isFinite && available > 0
+            return BandwidthHeadroom(requiredGbps: required, availableGbps: available, headroomPercent: fits ? 100 : 0, headroomLevel: fits ? .comfortable : .exceeded)
+        }
         let headroomPercent = ((available - required) / required) * 100.0
         let level: HeadroomLevel
         if headroomPercent > 20.0 {
@@ -108,8 +114,8 @@ public enum HDMIBandwidthCalculator {
         let gbps = requirement.effectiveBandwidthGbps
         if gbps <= HDMIStandard.hdmi14.maxBandwidthGbps { return .hdmi14 }
         if gbps <= HDMIStandard.hdmi20.maxBandwidthGbps { return .hdmi20 }
-        if gbps <= HDMIStandard.dp14.maxBandwidthGbps { return .dp14 }
         if gbps <= HDMIStandard.hdmi21.maxBandwidthGbps { return .hdmi21 }
+        // Beyond every HDMI revision only DisplayPort 2.1 can carry the mode uncompressed.
         return .dp21
     }
     

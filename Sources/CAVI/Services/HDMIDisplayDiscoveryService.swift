@@ -52,8 +52,9 @@ public final class HDMIDisplayDiscoveryService {
             // Get screen resolution & refresh rate from CGDisplayMode
             guard let mode = CGDisplayCopyDisplayMode(displayID) else { continue }
             
-            let width = mode.width
-            let height = mode.height
+            // Points differ from pixels on HiDPI modes; the cable carries pixels.
+            let width = mode.pixelWidth
+            let height = mode.pixelHeight
             var refreshRate = mode.refreshRate
             
             // Fallback refresh rate from NSScreen if mode.refreshRate returns 0

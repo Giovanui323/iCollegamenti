@@ -61,7 +61,7 @@ final class BenchmarkService {
         } catch is CancellationError {
             currentPhase = "Annullato"
             errorMessage = BenchmarkError.cancelled.errorDescription
-            eventLog?.recordBenchmark(kind: .benchmarkFailed, mountPath: mountPath, detail: errorMessage)
+            eventLog?.recordBenchmark(kind: .benchmarkCancelled, mountPath: mountPath)
             throw BenchmarkError.cancelled
         } catch {
             currentPhase = "Interrotto"
@@ -129,7 +129,7 @@ final class BenchmarkService {
         } catch is CancellationError {
             currentPhase = "Annullato"
             errorMessage = BenchmarkError.cancelled.errorDescription
-            eventLog?.recordBenchmark(kind: .benchmarkFailed, mountPath: mountPath, detail: errorMessage)
+            eventLog?.recordBenchmark(kind: .benchmarkCancelled, mountPath: mountPath)
             throw BenchmarkError.cancelled
         } catch {
             currentPhase = "Interrotto"

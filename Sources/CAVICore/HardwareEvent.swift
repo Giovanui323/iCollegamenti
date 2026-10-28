@@ -36,6 +36,8 @@ public enum HardwareEventKind: String, Codable, CaseIterable, Hashable, Sendable
     case benchmarkStarted
     case benchmarkCompleted
     case benchmarkFailed
+    /// Stopped by the user. It says nothing about the hardware, so it carries no stability penalty.
+    case benchmarkCancelled
 }
 
 public struct HardwareEvent: Codable, Hashable, Sendable, Identifiable {
@@ -83,11 +85,13 @@ public enum HardwareEventDetector {
         to current: [HardwareConnectionState],
         timestamp: Date = Date()
     ) -> [HardwareEvent] {
-        let previousByID = Dictionary(uniqueKeysWithValues: previous.map { ($0.id, $0) })
-        let currentByID = Dictionary(uniqueKeysWithValues: current.map { ($0.id, $0) })
+        // Identical peripherals without a location ID can share an identifier;
+        // keep the first snapshot instead of trapping on a duplicate key.
+        let previousByID = Dictionary(previous.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+        let currentByID = Dictionary(current.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
         var events: [HardwareEvent] = []
 
-        for state in current.filter({ previousByID[$0.id] == nil }).sorted(by: { $0.id < $1.id }) {
+        for state in currentByID.values.filter({ previousByID[$0.id] == nil }).sorted(by: { $0.id < $1.id }) {
             events.append(HardwareEvent(
                 timestamp: timestamp,
                 kind: .connected,
@@ -98,7 +102,7 @@ public enum HardwareEventDetector {
             ))
         }
 
-        for state in previous.filter({ currentByID[$0.id] == nil }).sorted(by: { $0.id < $1.id }) {
+        for state in previousByID.values.filter({ currentByID[$0.id] == nil }).sorted(by: { $0.id < $1.id }) {
             events.append(HardwareEvent(
                 timestamp: timestamp,
                 kind: .disconnected,
@@ -109,7 +113,7 @@ public enum HardwareEventDetector {
             ))
         }
 
-        for currentState in current.sorted(by: { $0.id < $1.id }) {
+        for currentState in currentByID.values.sorted(by: { $0.id < $1.id }) {
             guard let previousState = previousByID[currentState.id] else { continue }
             if currentState.linkSpeedBps != previousState.linkSpeedBps {
                 events.append(HardwareEvent(
@@ -208,7 +212,7 @@ public enum EventStabilityScorer {
                 protocolChangeCount += 1
             case .benchmarkFailed:
                 benchmarkFailedCount += 1
-            case .systemSleep, .systemWake, .benchmarkStarted, .benchmarkCompleted:
+            case .systemSleep, .systemWake, .benchmarkStarted, .benchmarkCompleted, .benchmarkCancelled:
                 break
             }
         }

@@ -71,12 +71,14 @@ public enum DriveHealthScorer {
             warnings.append(.lowRemainingLife)
         }
         if let errors = input.mediaErrorCount, errors > 0 {
-            score -= min(20, errors * 2)
+            score -= errors >= 10 ? 20 : errors * 2
             warnings.append(.mediaErrors)
         }
         score = max(0, score)
         let level: DriveHealthLevel
         switch score {
+        // A drive reporting a SMART failure is critical whatever the other signals say.
+        case _ where input.smartStatus == .failing: level = .critical
         case 90...: level = .excellent
         case 70...: level = .good
         case 40...: level = .warning

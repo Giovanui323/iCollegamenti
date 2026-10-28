@@ -32,10 +32,11 @@ public enum HDMICompatibilityMatrixGenerator {
             ("8K 60Hz SDR", 7680, 4320, 60, 8, .ycbcr420, false),
         ]
         return modes.map { mode in
-            // Approximation for bandwidth for the sake of the stub
-            let pixelsPerSecond = Double(mode.1 * mode.2) * mode.3
-            let bpp = Double(mode.4 * 3)
-            let bandwidth = (pixelsPerSecond * bpp) / 1_000_000_000.0 * 1.2
+            // Same model as the signal analysis, so 4:2:0 and 4:2:2 rows are not priced as RGB.
+            let bandwidth = HDMIBandwidthCalculator.calculate(
+                width: mode.1, height: mode.2, refreshRate: mode.3,
+                bitDepth: mode.4, chroma: mode.5, isDSC: false
+            ).totalBandwidthGbps
             return HDMICompatibilityRow(
                 id: UUID(),
                 modeLabel: mode.0,

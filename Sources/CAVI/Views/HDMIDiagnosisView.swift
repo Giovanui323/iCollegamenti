@@ -4,6 +4,7 @@ import CAVICore
 struct HDMIDiagnosisView: View {
     @Environment(HDMIDisplayDiscoveryService.self) private var hdmiService
     @Environment(HDMIDisplayAnalysisService.self) private var hdmiAnalysis
+    @Environment(EDIDReaderService.self) private var edidReader
     @Environment(LanguageManager.self) private var lm
 
     var body: some View {
@@ -21,7 +22,7 @@ struct HDMIDiagnosisView: View {
                         currentMode: "\(config?.width ?? 0)x\(config?.height ?? 0)"
                     )
                     
-                    automaticDiagnosisSection(diagnosis: diagnosis)
+                    automaticDiagnosisSection(diagnosis: diagnosis, config: config, edid: edidReader.parsedEDID(for: display.displayID))
                     wizardSection(diagnosis: diagnosis)
                     
                 } else {
@@ -34,16 +35,18 @@ struct HDMIDiagnosisView: View {
     }
     
     @ViewBuilder
-    private func automaticDiagnosisSection(diagnosis: HDMIChainDiagnosis) -> some View {
+    private func automaticDiagnosisSection(diagnosis: HDMIChainDiagnosis, config: HDMISignalConfiguration?, edid: ParsedEDID?) -> some View {
         GroupBox(lm.t("Automatic Diagnosis", "Diagnosi Automatica")) {
             VStack(alignment: .leading, spacing: 16) {
                 Text(diagnosis.naturalLanguageExplanation)
                     .font(.body)
                 
+                // Scores come only from the active signal and the EDID. Connection stability
+                // is not measured here, so it is shown as unavailable instead of a perfect 100.
                 HStack(spacing: 24) {
-                    scoreGauge(title: lm.t("Connection", "Connessione"), value: HDMIScoringEngine.connectionScore().overall)
-                    scoreGauge(title: lm.t("Gaming", "Gaming"), value: HDMIScoringEngine.gamingScore().overall)
-                    scoreGauge(title: lm.t("Professional", "Professionale"), value: HDMIScoringEngine.professionalScore().overall)
+                    scoreGauge(title: lm.t("Connection", "Connessione"), value: nil)
+                    scoreGauge(title: lm.t("Gaming", "Gaming"), value: config.map { HDMIScoringEngine.observedGamingScore(signal: $0, edid: edid).overall })
+                    scoreGauge(title: lm.t("Professional", "Professionale"), value: config.map { HDMIScoringEngine.observedProfessionalScore(signal: $0, edid: edid).overall })
                 }
                 .padding(.top, 8)
             }
@@ -52,13 +55,19 @@ struct HDMIDiagnosisView: View {
     }
     
     @ViewBuilder
-    private func scoreGauge(title: String, value: Int) -> some View {
+    private func scoreGauge(title: String, value: Int?) -> some View {
         VStack {
-            Gauge(value: Double(value), in: 0...100) {
+            Gauge(value: Double(value ?? 0), in: 0...100) {
                 Text(title)
             } currentValueLabel: {
-                Text("\(value)")
-                    .foregroundStyle(value > 80 ? .green : (value > 50 ? .orange : .red))
+                if let value {
+                    Text("\(value)")
+                        .foregroundStyle(value > 80 ? .green : (value > 50 ? .orange : .red))
+                } else {
+                    Text("—")
+                        .foregroundStyle(.secondary)
+                        .help(lm.t("Not measured", "Non misurato"))
+                }
             }
             .gaugeStyle(.accessoryCircular)
             .scaleEffect(1.2)

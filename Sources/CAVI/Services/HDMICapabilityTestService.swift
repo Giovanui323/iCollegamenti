@@ -28,20 +28,25 @@ public final class HDMICapabilityTestService {
             if let originalMode { _ = Self.apply(originalMode, to: displayID) }
         }
 
-        let sorted = allModes.sorted { m1, m2 in
-            let bw1 = Double(m1.width * m1.height) * m1.refreshRate
-            let bw2 = Double(m2.width * m2.height) * m2.refreshRate
-            return bw1 < bw2
-        }
+        // The cable carries the pixel size, not the point size, and HiDPI variants of one
+        // pixel mode put the same signal on the link: test each signal once.
+        var seenSignals = Set<String>()
+        let sorted = allModes
+            .filter { seenSignals.insert("\($0.pixelWidth)x\($0.pixelHeight)@\($0.refreshRate)").inserted }
+            .sorted { m1, m2 in
+                let bw1 = Double(m1.pixelWidth * m1.pixelHeight) * m1.refreshRate
+                let bw2 = Double(m2.pixelWidth * m2.pixelHeight) * m2.refreshRate
+                return bw1 < bw2
+            }
 
         for (index, mode) in sorted.enumerated() {
             guard isRunning, !Task.isCancelled else { break }
             currentTestIndex = index
-            let description = "\(mode.width)x\(mode.height)@\(Int(mode.refreshRate))Hz"
-            let bandwidth = HDMIBandwidthCalculator.calculate(width: mode.width, height: mode.height, refreshRate: mode.refreshRate, bitDepth: 8, chroma: .rgb444, isDSC: false).totalBandwidthGbps
+            let description = "\(mode.pixelWidth)x\(mode.pixelHeight)@\(Int(mode.refreshRate.rounded()))Hz"
+            let bandwidth = HDMIBandwidthCalculator.calculate(width: mode.pixelWidth, height: mode.pixelHeight, refreshRate: mode.refreshRate, bitDepth: 8, chroma: .rgb444, isDSC: false).totalBandwidthGbps
 
             guard Self.apply(mode, to: displayID) else {
-                testResults.append(HDMICapabilityTestEntry(id: UUID(), modeDescription: description, width: mode.width, height: mode.height, refreshRate: mode.refreshRate, bitDepth: 8, chroma: .rgb444, isHDR: false, bandwidthGbps: bandwidth, status: .fail, durationSeconds: nil, disconnects: 0, notes: "Mode switch rejected"))
+                testResults.append(HDMICapabilityTestEntry(id: UUID(), modeDescription: description, width: mode.pixelWidth, height: mode.pixelHeight, refreshRate: mode.refreshRate, bitDepth: 8, chroma: .rgb444, isHDR: false, bandwidthGbps: bandwidth, status: .fail, durationSeconds: nil, disconnects: 0, notes: "Mode switch rejected"))
                 continue
             }
 
@@ -55,7 +60,7 @@ public final class HDMICapabilityTestService {
             let entry = HDMICapabilityTestEntry(
                 id: UUID(),
                 modeDescription: description,
-                width: mode.width, height: mode.height,
+                width: mode.pixelWidth, height: mode.pixelHeight,
                 refreshRate: mode.refreshRate, bitDepth: 8,
                 chroma: .rgb444, isHDR: false,
                 bandwidthGbps: bandwidth,
@@ -97,7 +102,7 @@ public final class HDMICapabilityTestService {
     private static func isActive(_ mode: CGDisplayMode, on displayID: CGDirectDisplayID) -> Bool {
         guard CGDisplayIsActive(displayID) != 0,
               let current = CGDisplayCopyDisplayMode(displayID) else { return false }
-        return current.width == mode.width && current.height == mode.height
+        return current.pixelWidth == mode.pixelWidth && current.pixelHeight == mode.pixelHeight
             && abs(current.refreshRate - mode.refreshRate) < 0.5
     }
 }

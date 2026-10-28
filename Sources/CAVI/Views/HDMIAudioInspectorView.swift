@@ -21,11 +21,12 @@ struct HDMIAudioInspectorView: View {
                     )
                 } else {
                     GroupBox(lm.t("Supported Audio Formats", "Formati Audio Supportati")) {
-                        List(audioFormats, id: \.formatName) { format in
+                        // A display can list the same codec twice (e.g. 2 ch and 8 ch LPCM), so the name is not an identity.
+                        List(Array(audioFormats.enumerated()), id: \.offset) { _, format in
                             HStack {
                                 Text(format.formatName).frame(width: 100, alignment: .leading)
                                 Text("\(format.maxChannels) ch").frame(width: 80, alignment: .leading)
-                                Text(format.sampleRates.map { "\($0)kHz" }.joined(separator: ", ")).frame(width: 150, alignment: .leading)
+                                Text(format.sampleRates.map { ($0 % 1000 == 0 ? "\($0 / 1000)" : String(format: "%.1f", Double($0) / 1000)) + " kHz" }.joined(separator: ", ")).frame(width: 150, alignment: .leading)
                                 Text(format.bitDepths?.map { "\($0)-bit" }.joined(separator: ", ") ?? "").frame(maxWidth: .infinity, alignment: .leading)
                             }
                         }

@@ -45,8 +45,11 @@ public enum HDMIScoringEngine {
         audioFormats: [CTAAudioFormat],
         disconnects: Int
     ) -> HDMIConnectionScore {
-        let bandwidth = min(100, Int(bandwidthHeadroom.headroomPercent * 2.5) + 50)
+        let headroom = bandwidthHeadroom.headroomPercent.isFinite ? bandwidthHeadroom.headroomPercent : 0
+        // Clamp before converting: a large or negative headroom must not overflow Int or go below zero.
+        let bandwidth = Int(min(100, max(0, headroom * 2.5 + 50)))
         let signal = isHDR ? 100 : 80
+        let disconnects = max(0, min(disconnects, 100))
         let stability = max(0, 100 - disconnects * 20)
         let hdr = isHDR ? 100 : 0
         let audio = audioFormats.isEmpty ? 50 : min(100, audioFormats.count * 15 + 40)
@@ -70,7 +73,7 @@ public enum HDMIScoringEngine {
         if supportsHDR { score += 20 }
         if chromaQuality == .rgb444 || chromaQuality == .ycbcr444 { score += 15 }
         if bitDepth >= 10 { score += 10 }
-        score += stabilityScore / 10
+        score += max(0, min(100, stabilityScore)) / 10
         return HDMIGamingScore(overall: min(100, score), supports4K120: supports4K120, supportsHighRefresh: supports4K120, supportsVRR: supportsVRR, supportsHDR: supportsHDR, chromaQuality: chromaQuality.rawValue, bitDepth: bitDepth, stabilityScore: stabilityScore)
     }
     
@@ -92,6 +95,52 @@ public enum HDMIScoringEngine {
         return HDMIProfessionalScore(overall: min(100, score), rgbFull: rgbFull, is10Bit: is10Bit, supportsHDR: supportsHDR, maxResolution: maxResolution, maxRefresh: maxRefresh, isCompressed: isCompressed, edidComplete: edidComplete)
     }
     
+    /// Gaming score from the active signal and the display's EDID only. No stability
+    /// was measured, so that share is left out and the result rescaled, never assumed perfect.
+    public static func observedGamingScore(signal: HDMISignalConfiguration, edid: ParsedEDID?) -> HDMIGamingScore {
+        let advertises4K120 = edid?.ctaExtension?.supportedVideoModes.contains {
+            $0.width >= 3840 && $0.refreshRate >= 119
+        } ?? false
+        let supports4K120 = (signal.width >= 3840 && signal.refreshRate >= 119) || advertises4K120
+        let supportsVRR = signal.isVRRActive || edid?.ctaExtension?.vrrRange != nil
+        let supportsHDR = signal.isHDRActive || edid?.ctaExtension?.hdrCapabilities?.supportsHDR == true
+        let measured = gamingScore(
+            supports4K120: supports4K120,
+            supportsVRR: supportsVRR,
+            supportsHDR: supportsHDR,
+            chromaQuality: signal.chroma,
+            bitDepth: signal.bitDepth,
+            stabilityScore: 0
+        )
+        let rescaled = Int((Double(measured.overall) * 100 / 90).rounded())
+        return HDMIGamingScore(
+            overall: min(100, rescaled),
+            supports4K120: supports4K120,
+            supportsHighRefresh: signal.refreshRate >= 100,
+            supportsVRR: supportsVRR,
+            supportsHDR: supportsHDR,
+            chromaQuality: signal.chroma.rawValue,
+            bitDepth: signal.bitDepth,
+            stabilityScore: 0
+        )
+    }
+
+    /// Professional score from the active signal and the display's EDID.
+    public static func observedProfessionalScore(signal: HDMISignalConfiguration, edid: ParsedEDID?) -> HDMIProfessionalScore {
+        let maxWidth = max(signal.width, edid?.nativeResolution?.width ?? 0)
+        let maxHeight = max(signal.height, edid?.nativeResolution?.height ?? 0)
+        let edidComplete = edid.map { $0.nativeResolution != nil && $0.manufactureName != nil } ?? false
+        return professionalScore(
+            rgbFull: signal.chroma == .rgb444,
+            is10Bit: signal.bitDepth >= 10,
+            supportsHDR: signal.isHDRActive || edid?.ctaExtension?.hdrCapabilities?.supportsHDR == true,
+            maxResolution: "\(maxWidth)x\(maxHeight)",
+            maxRefresh: "\(Int(signal.refreshRate.rounded()))Hz",
+            isCompressed: signal.isDSCActive,
+            edidComplete: edidComplete
+        )
+    }
+
     public static func professionalScore(overall: Int = 100) -> HDMIProfessionalScore {
         return HDMIProfessionalScore(overall: overall, rgbFull: true, is10Bit: true, supportsHDR: true, maxResolution: "8K", maxRefresh: "120Hz", isCompressed: false, edidComplete: true)
     }

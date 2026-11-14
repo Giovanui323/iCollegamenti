@@ -70,7 +70,7 @@ struct HDMICableTesterView: View {
     /// Nothing called it, so the signal showed 0 × 0 and 0 Hz for every monitor.
     private func analyzeSelectedDisplay() {
         guard let display = hdmiService.selectedDisplay else { return }
-        hdmiAnalysis.analyze(displayID: display.displayID, edid: edidReader.parsedEDID(for: display.displayID))
+        hdmiAnalysis.analyze(displayID: display.displayID, edid: edidReader.readEDID(for: display.displayID))
     }
     
     @MainActor
@@ -116,7 +116,9 @@ struct HDMICableTesterView: View {
         case .signal:
             HDMISignalView()
         case .display, .edidRaw:
+            // Monitor and EDID share this view; a distinct identity makes each tab start in its own mode.
             EDIDInspectorView(initialMode: selectedTab == .display ? .interpreted : .raw)
+                .id(selectedTab)
         case .audio:
             HDMIAudioInspectorView()
         case .test:

@@ -40,8 +40,15 @@ struct HDMIDiagnosisView: View {
     private func automaticDiagnosisSection(diagnosis: HDMIChainDiagnosis, config: HDMISignalConfiguration?, edid: ParsedEDID?, stress: HDMIStressTestResult?) -> some View {
         GroupBox(lm.t("Automatic Diagnosis", "Diagnosi Automatica")) {
             VStack(alignment: .leading, spacing: 16) {
-                Text(diagnosis.naturalLanguageExplanation)
+                // The chain engine never has measured nodes on this Mac; its English text is replaced by a localised one.
+                Text(diagnosis.nodes.isEmpty
+                    ? lm.t(
+                        "macOS does not expose the adapter, cable and GPU link details, so the chain itself cannot be judged. The scores below use only what can be read: the active signal, the monitor's EDID and, for Connection, a stress test.",
+                        "macOS non espone i dettagli di adattatore, cavo e collegamento della GPU, quindi la catena in sé non può essere valutata. I punteggi qui sotto usano solo ciò che si può leggere: il segnale attivo, l'EDID del monitor e, per la Connessione, uno stress test."
+                    )
+                    : diagnosis.naturalLanguageExplanation)
                     .font(.body)
+                    .fixedSize(horizontal: false, vertical: true)
 
                 // Scores come only from the active signal, the EDID and a completed stress test.
                 // Without a stress test the connection is not measured, so it shows as unavailable.
@@ -56,6 +63,12 @@ struct HDMIDiagnosisView: View {
                     scoreGauge(title: lm.t("Professional", "Professionale"), value: config.map { HDMIScoringEngine.observedProfessionalScore(signal: $0, edid: edid).overall })
                 }
                 .padding(.top, 8)
+
+                VStack(alignment: .leading, spacing: 4) {
+                    scoreLegend(lm.t("Connection", "Connessione"), lm.t("stability of the signal during a stress test (Test tab).", "stabilità del segnale durante uno stress test (scheda Test)."))
+                    scoreLegend(lm.t("Gaming", "Gaming"), lm.t("4K at 120 Hz, VRR, HDR, full colour and 10-bit: what matters for games.", "4K a 120 Hz, VRR, HDR, colore completo e 10 bit: ciò che conta nei giochi."))
+                    scoreLegend(lm.t("Professional", "Professionale"), lm.t("full RGB, 10-bit, HDR, no compression and a complete EDID: what matters for photo and video work.", "RGB completo, 10 bit, HDR, nessuna compressione ed EDID completo: ciò che conta per foto e video."))
+                }
 
                 if let connection, !connection.bandwidthObserved {
                     Text(lm.t(
@@ -73,8 +86,9 @@ struct HDMIDiagnosisView: View {
     @ViewBuilder
     private func scoreGauge(title: String, value: Int?, unavailableHelp: String? = nil) -> some View {
         VStack {
+            // The title is shown under the gauge; inside it there is no room and it was truncated.
             Gauge(value: Double(value ?? 0), in: 0...100) {
-                Text(title)
+                EmptyView()
             } currentValueLabel: {
                 if let value {
                     Text("\(value)")
@@ -92,6 +106,13 @@ struct HDMIDiagnosisView: View {
                 .font(.caption)
                 .padding(.top, 8)
         }
+    }
+
+    private func scoreLegend(_ title: String, _ text: String) -> some View {
+        (Text(title).fontWeight(.semibold) + Text(": " + text))
+            .font(.caption)
+            .foregroundStyle(.secondary)
+            .fixedSize(horizontal: false, vertical: true)
     }
 
     @ViewBuilder

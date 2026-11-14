@@ -35,4 +35,30 @@ final class HDMIAndDiagnosisIntegrationTests: XCTestCase {
         XCTAssertFalse(display.supportsHDR10)
         XCTAssertNil(display.vrrRange)
     }
+
+    func testCableRecordIsBuiltOnlyFromMeasurements() throws {
+        XCTAssertNil(HDMICableTestRecord.measured(displayName: "TV", highestVerifiedMode: nil, capabilityScore: nil, stress: nil))
+
+        let mode = HDMICapabilityTestEntry(
+            id: UUID(), modeDescription: "3840x2160@60Hz", width: 3840, height: 2160, refreshRate: 60,
+            bitDepth: 8, chroma: .rgb444, isHDR: false, bandwidthGbps: 14.9, status: .pass,
+            durationSeconds: 5, disconnects: 0, notes: nil
+        )
+        let stress = HDMIStressTestResult(
+            id: UUID(), mode: "3840x2160@60Hz", durationSeconds: 300, disconnects: 1, renegotiations: 0,
+            modeChanges: 0, hdcpFailures: 0, stabilityScore: 70, events: []
+        )
+        let record = try XCTUnwrap(HDMICableTestRecord.measured(displayName: "TV", highestVerifiedMode: mode, capabilityScore: 90, stress: stress))
+        XCTAssertEqual(record.maximumVerifiedMode, "3840x2160@60Hz")
+        XCTAssertEqual(record.maximumBandwidthGbps, 14.9)
+        XCTAssertEqual(record.stressTestDuration, 300)
+        XCTAssertEqual(record.disconnects, 1)
+        XCTAssertEqual(record.stabilityScore, 70)
+        XCTAssertEqual(record.overallScore, 80)
+
+        let stressOnly = try XCTUnwrap(HDMICableTestRecord.measured(displayName: "TV", highestVerifiedMode: nil, capabilityScore: nil, stress: stress))
+        XCTAssertEqual(stressOnly.maximumVerifiedMode, "—")
+        XCTAssertEqual(stressOnly.maximumBandwidthGbps, 0)
+        XCTAssertEqual(stressOnly.overallScore, 70)
+    }
 }

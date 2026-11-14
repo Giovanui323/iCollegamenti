@@ -6,9 +6,12 @@ struct HDMICapabilityTestView: View {
     @Environment(HDMIStressTestService.self) private var stressTest
     @Environment(HDMIDisplayDiscoveryService.self) private var hdmiService
     @Environment(EDIDReaderService.self) private var edidReader
+    @Environment(HDMICableHistoryStore.self) private var cableHistory
     @Environment(LanguageManager.self) private var lm
     
     @State private var stressDurationMins: Int = 5
+    @State private var cableToSaveID: UUID?
+    @State private var savedMessage: String?
     
     var body: some View {
         VStack(spacing: 24) {
@@ -17,6 +20,7 @@ struct HDMICapabilityTestView: View {
                     VStack(spacing: 24) {
                         capabilitySection(display: display)
                         stressTestSection(display: display)
+                        saveToCableSection(display: display)
                     }
                     .frame(maxWidth: .infinity)
                     
@@ -120,6 +124,51 @@ struct HDMICapabilityTestView: View {
         }
     }
     
+    /// Stores what was measured on this display in a saved cable's history (Cable tab).
+    @ViewBuilder
+    private func saveToCableSection(display: HDMIDisplayDevice) -> some View {
+        let record = HDMICableTestRecord.measured(
+            displayName: display.displayName,
+            highestVerifiedMode: capabilityTest.highestVerifiedMode(for: display.displayID),
+            capabilityScore: capabilityTest.results(for: display.displayID).isEmpty ? nil : capabilityTest.stabilityScore(for: display.displayID),
+            stress: stressTest.isRunning ? nil : stressTest.result(for: display.displayID)
+        )
+        GroupBox(lm.t("Save to cable", "Salva sul cavo")) {
+            VStack(alignment: .leading, spacing: 10) {
+                if cableHistory.cables.isEmpty {
+                    Text(lm.t("Add a cable in the Cable tab to keep these results.", "Aggiungi un cavo nella scheda Cavo per conservare questi risultati."))
+                        .foregroundStyle(.secondary)
+                } else if record == nil {
+                    Text(lm.t("Run the capability or stress test first.", "Esegui prima il test di capacità o lo stress test."))
+                        .foregroundStyle(.secondary)
+                } else {
+                    HStack {
+                        Picker(lm.t("Cable", "Cavo"), selection: $cableToSaveID) {
+                            Text(lm.t("Choose…", "Scegli…")).tag(UUID?.none)
+                            ForEach(cableHistory.cables) { Text($0.name).tag(Optional($0.id)) }
+                        }
+                        .frame(maxWidth: 280)
+                        Button(lm.t("Save", "Salva"), systemImage: "square.and.arrow.down") {
+                            guard let id = cableToSaveID, let record else { return }
+                            cableHistory.addTestRecord(cableID: id, record: record)
+                            let name = cableHistory.cables.first { $0.id == id }?.name ?? ""
+                            savedMessage = lm.t("Saved to \(name).", "Salvato su \(name).")
+                        }
+                        .disabled(cableToSaveID == nil)
+                    }
+                }
+                if let savedMessage {
+                    Label(savedMessage, systemImage: "checkmark.circle.fill")
+                        .foregroundStyle(.green)
+                        .font(.callout)
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.top, 8)
+        }
+        .onChange(of: cableToSaveID) { _, _ in savedMessage = nil }
+    }
+
     @ViewBuilder
     private func stressTestSection(display: HDMIDisplayDevice) -> some View {
         GroupBox(lm.t("Stress Test", "Stress Test")) {

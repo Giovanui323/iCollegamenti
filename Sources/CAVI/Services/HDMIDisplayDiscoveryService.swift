@@ -2,6 +2,7 @@ import Foundation
 import SwiftUI
 import AppKit
 import CoreGraphics
+import CAVICore
 
 /// Discovers connected external HDMI / DisplayPort / USB-C displays.
 /// Analyzes the active video signal and estimates the minimum connection capability it requires.
@@ -45,6 +46,8 @@ public final class HDMIDisplayDiscoveryService {
         guard err == .success else { return }
         
         var detected: [HDMIDisplayDevice] = []
+        let transports = DisplayPortTransportReader.observations()
+        let externalCount = (0..<Int(displayCount)).filter { CGDisplayIsBuiltin(activeDisplayIDs[$0]) == 0 }.count
         
         for i in 0..<Int(displayCount) {
             let displayID = activeDisplayIDs[i]
@@ -78,6 +81,11 @@ public final class HDMIDisplayDiscoveryService {
             let estimatedGbps = rawBps / 1_000_000_000.0
             
             let grade = HDMICableGrade.required(forEstimatedBandwidthGbps: estimatedGbps)
+            let link = DisplayLinkMatcher.observation(
+                for: (Int(CGDisplayModelNumber(displayID)), Int(CGDisplaySerialNumber(displayID)), displayName),
+                in: transports,
+                externalDisplayCount: externalCount
+            ).map(DisplayLinkClassifier.assess)
             
             var device = HDMIDisplayDevice(
                 displayID: displayID,
@@ -87,12 +95,13 @@ public final class HDMIDisplayDiscoveryService {
                 refreshRateHz: refreshRate,
                 isHDRSupported: isHDR,
                 colorDepthBits: colorDepth,
-                connectionTransport: "Trasporto non esposto da macOS",
+                connectionTransport: link?.summary(italian: true) ?? "Trasporto non esposto da macOS",
                 estimatedBandwidthGbps: estimatedGbps,
                 cableGrade: grade
             )
             
-            if let edid = edidReader?.parsedEDID(for: displayID) {
+            device.displayLink = link
+            if let edid = edidReader?.readEDID(for: displayID) {
                 device.apply(edid: edid)
             }
             detected.append(device)
@@ -116,7 +125,7 @@ public final class HDMIDisplayDiscoveryService {
                 return screen.localizedName
             }
         }
-        return "Monitor HDMI Esterno"
+        return "Monitor esterno"
     }
     
     private func getScreenRefreshRateFallback(displayID: CGDirectDisplayID) -> Double {

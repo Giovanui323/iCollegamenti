@@ -70,7 +70,7 @@ public final class HDMIDisplayAnalysisService {
             isHDRActive: isHDR,
             isDSCActive: false,
             isVRRActive: false,
-            transportType: "HDMI",
+            transportType: detectTransport(displayID: displayID),
             bandwidthRequirement: calc
         )
         self.currentSignal = config
@@ -91,8 +91,23 @@ public final class HDMIDisplayAnalysisService {
         self.connectionTransport = detectTransport(displayID: displayID)
     }
     
+    /// Physical link as reported by macOS's DisplayPort transport, not assumed to be HDMI.
     public func detectTransport(displayID: CGDirectDisplayID) -> String {
-        return "HDMI"
+        let externalCount = NSScreen.screens.compactMap {
+            $0.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? CGDirectDisplayID
+        }.filter { CGDisplayIsBuiltin($0) == 0 }.count
+        let match = DisplayLinkMatcher.observation(
+            for: (Int(CGDisplayModelNumber(displayID)), Int(CGDisplaySerialNumber(displayID)), nil),
+            in: DisplayPortTransportReader.observations(),
+            externalDisplayCount: externalCount
+        )
+        guard let match else { return "Unknown" }
+        switch DisplayLinkClassifier.kind(for: match) {
+        case .builtInHDMIPort, .usbCToHDMIAdapter: return "HDMI"
+        case .usbCDisplayPortAltMode: return "DisplayPort"
+        case .thunderboltOrUSB4Tunnel: return "Thunderbolt/USB4"
+        case .unknown: return "Unknown"
+        }
     }
     
     public func currentConfiguration(for displayID: CGDirectDisplayID) -> HDMISignalConfiguration? {

@@ -2,6 +2,7 @@ import Foundation
 
 public enum HDMITestPattern: String, Codable, Hashable, Sendable, CaseIterable {
     case pixelGrid
+    case deadPixels
     case chromaCheck
     case gradient
     case colorBars

@@ -134,9 +134,48 @@ public final class TestHistoryStore {
         let topologyDescription = device.storageConnectionKind.supportsUSBTopology
             ? USBTopologyService.topologyDescription(for: device)
             : device.storageConnectionKind.connectionDescription
+        if device.isUSBBillboard {
+            // A Billboard device is a USB-C video (Alt Mode) accessory, not a data peripheral.
+            let link = Self.liveUSBCVideoLink()
+            let result = CableTestResult(
+                cableLabel: USBBillboardPolicy.historyLabel(liveLink: link),
+                deviceName: device.displayName,
+                deviceVendorID: device.vendorID,
+                deviceProductID: device.productID,
+                deviceSerialNumber: device.serialNumber,
+                linkSpeedBps: link?.effectiveGbps.map { UInt64($0 * 1_000_000_000) } ?? 0,
+                userNotes: link.map { $0.summary(italian: true) }
+                    ?? "Accessorio USB-C Alt Mode rilevato (Billboard), nessun display DisplayPort attivo sulla porta USB-C.",
+                topologyDescription: link.map { "Mac → \($0.kind.italianDescription)" + ($0.productName.map { " → \($0)" } ?? "") }
+                    ?? "Mac → USB-C Alt Mode (Billboard)",
+                connectionFingerprint: fingerprint,
+                category: .video
+            )
+            saveTestResult(result)
+            return result.id
+        }
         let result = CableTestResult(cableLabel: defaultLabel, deviceName: device.displayName, deviceVendorID: device.vendorID, deviceProductID: device.productID, deviceSerialNumber: device.serialNumber, linkSpeedBps: device.negotiatedSpeedBps ?? 0, topologyDescription: topologyDescription, connectionFingerprint: fingerprint)
         saveTestResult(result)
         return result.id
+    }
+
+    /// Older versions stored USB-C Alt Mode (Billboard) accessories as USB data links.
+    nonisolated static func reclassifyingBillboard(_ old: CableTestResult) -> CableTestResult {
+        guard old.category == .data,
+              old.benchmarkReadMBps == nil,
+              USBBillboardPolicy.isBillboard(deviceClass: nil, productName: old.deviceName) else { return old }
+        let label = old.cableLabel.localizedCaseInsensitiveContains("billboard")
+            ? USBBillboardPolicy.historyLabel(liveLink: nil)
+            : old.cableLabel
+        return CableTestResult(id: old.id, cableLabel: label, timestamp: old.timestamp, deviceName: old.deviceName, deviceVendorID: old.deviceVendorID, deviceProductID: old.deviceProductID, deviceSerialNumber: old.deviceSerialNumber, linkSpeedBps: 0, benchmarkReadMBps: nil, benchmarkWriteMBps: nil, portInfo: old.portInfo, hubInfo: old.hubInfo, userNotes: old.userNotes ?? "Accessorio USB-C Alt Mode (Billboard): cavo o adattatore video, non un collegamento dati USB.", topologyDescription: "Mac → USB-C Alt Mode (Billboard)", connectionFingerprint: old.connectionFingerprint, cableID: old.cableID, category: .video)
+    }
+
+    /// The live DisplayPort link on a USB-C port (Alt Mode or tunnel), if any.
+    nonisolated static func liveUSBCVideoLink() -> DisplayLinkAssessment? {
+        DisplayPortTransportReader.observations()
+            .filter(\.isLive)
+            .map(DisplayLinkClassifier.assess)
+            .first { $0.kind != .builtInHDMIPort && $0.kind != .unknown }
     }
 
     public func attachBenchmark(_ benchmark: BenchmarkResult, to resultID: UUID) {
@@ -584,7 +623,9 @@ public final class TestHistoryStore {
         migrateLegacyDataIfNeeded()
         
         if let decoded = decodeFile([CableTestResult].self, at: historyFileURL) {
-            testResults = decoded
+            let reclassified = decoded.map(Self.reclassifyingBillboard)
+            testResults = reclassified
+            if reclassified != decoded { save() }
         }
         
         if let decoded = decodeFile([ReferenceDevice].self, at: referencesFileURL) {

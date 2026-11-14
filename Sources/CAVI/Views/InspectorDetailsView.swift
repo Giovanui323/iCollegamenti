@@ -190,13 +190,34 @@ private struct DisplayInspectorDetails: View {
                 LabeledContent(languageManager.t("Refresh Rate", "Frequenza"), value: "\(Int(display.refreshRateHz.rounded())) Hz")
                 LabeledContent(languageManager.t("Depth", "Profondità"), value: "\(display.colorDepthBits) \(languageManager.t("bits/channel", "bit/canale"))")
                 LabeledContent("HDR", value: display.isHDRSupported ? languageManager.t("Supported", "Supportato") : languageManager.t("Not detected", "Non rilevato"))
-                LabeledContent(languageManager.t("Transport", "Trasporto"), value: display.connectionTransport)
+                if let link = display.displayLink {
+                    let italian = languageManager.currentLanguage == .italian
+                    LabeledContent(languageManager.t("Connection", "Collegamento"), value: italian ? link.kind.italianDescription : link.kind.englishDescription)
+                    if let rate = link.laneRateGbps, let lanes = link.laneCount {
+                        let generation = link.generation.map { "\($0) · " } ?? ""
+                        LabeledContent(languageManager.t("DisplayPort link", "Link DisplayPort"),
+                                       value: "\(generation)\(String(format: "%.1f", rate)) Gb/s × \(lanes)")
+                    }
+                    if let effective = link.effectiveGbps {
+                        LabeledContent(languageManager.t("Usable bandwidth", "Banda utile"), value: String(format: "%.1f Gb/s", effective))
+                    }
+                    if link.isLaneReduced, let maxLanes = link.maxLaneCount {
+                        Label(languageManager.t(
+                            "Only \(link.laneCount ?? 0) of \(maxLanes) lanes trained: a dock sharing USB 3, or a marginal cable.",
+                            "Solo \(link.laneCount ?? 0) lane su \(maxLanes) attive: dock che condivide USB 3 o cavo al limite."
+                        ), systemImage: "exclamationmark.triangle")
+                        .font(.footnote)
+                        .foregroundStyle(.orange)
+                    }
+                } else {
+                    LabeledContent(languageManager.t("Transport", "Trasporto"), value: display.connectionTransport)
+                }
             }
 
             Section {
                 Text(languageManager.t(
-                    "Display mode is observed from macOS; macOS does not expose raw physical cable certification.",
-                    "La modalità video è osservata; macOS non espone il trasporto effettivo o la certificazione fisica del cavo."
+                    "Port and link rate come from macOS's DisplayPort transport; macOS does not expose the cable's physical certification.",
+                    "Porta e velocità del link arrivano dal trasporto DisplayPort di macOS; macOS non espone la certificazione fisica del cavo."
                 ))
                 .font(.footnote)
                 .foregroundStyle(.secondary)

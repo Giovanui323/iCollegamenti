@@ -10,6 +10,8 @@ public final class EDIDReaderService {
     private var rawEDIDs: [CGDirectDisplayID: [UInt8]] = [:]
     /// Displays whose EDID could not be found. Cached so the view does not rescan the registry on every redraw.
     private var unavailableDisplayIDs: Set<CGDirectDisplayID> = []
+    /// Bookkeeping only; views do not need to redraw when it changes.
+    @ObservationIgnored private var pendingDisplayIDs: Set<CGDirectDisplayID> = []
 
     public init() {}
 
@@ -31,8 +33,20 @@ public final class EDIDReaderService {
         return edid
     }
 
+    /// Safe to call from a view body: it only reads the cache. A missing entry is loaded on the
+    /// next main-actor turn, because changing observed state while SwiftUI is drawing a view
+    /// makes it redraw again mid-update and the tabs could stall.
     public func parsedEDID(for displayID: CGDirectDisplayID) -> CAVICore.ParsedEDID? {
-        readEDID(for: displayID)
+        if let parsed = parsedEDIDs[displayID] { return parsed }
+        if !unavailableDisplayIDs.contains(displayID) && !pendingDisplayIDs.contains(displayID) {
+            pendingDisplayIDs.insert(displayID)
+            Task { @MainActor [weak self] in
+                guard let self else { return }
+                _ = self.readEDID(for: displayID)
+                self.pendingDisplayIDs.remove(displayID)
+            }
+        }
+        return nil
     }
 
     public func readAllEDIDs(displayIDs: [CGDirectDisplayID]) {

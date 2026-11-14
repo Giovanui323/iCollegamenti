@@ -216,6 +216,8 @@ public struct HDMIDisplayDevice: Identifiable, Hashable, Sendable, Codable {
     public var supportsHDR10: Bool
     public var supportsHLG: Bool
     public var vrrRange: VRRRange?
+    /// Physical port and negotiated DisplayPort link, when macOS exposes the transport.
+    public var displayLink: DisplayLinkAssessment?
     
     public init(id: UUID = UUID(), displayID: UInt32, displayName: String, widthPixels: Int, heightPixels: Int, refreshRateHz: Double, isHDRSupported: Bool, colorDepthBits: Int, connectionTransport: String, estimatedBandwidthGbps: Double, cableGrade: HDMICableGrade) {
         self.id = id
@@ -239,6 +241,7 @@ public struct HDMIDisplayDevice: Identifiable, Hashable, Sendable, Codable {
         self.supportsHDR10 = false
         self.supportsHLG = false
         self.vrrRange = nil
+        self.displayLink = nil
     }
     
     public var resolutionFormatted: String {
@@ -764,3 +767,15 @@ extension HDMIChainDiagnosis {
     }
 }
 
+
+extension DriveDevice {
+    /// USB-C Alt Mode accessory (USB Billboard class 0x11), i.e. a video cable/adapter.
+    public var isUSBBillboard: Bool {
+        guard !isStorageDevice else { return false }
+        let classValue = connectionSnapshot?.technicalProperties.first { $0.key == "bDeviceClass" }?.value
+        return USBBillboardPolicy.isBillboard(
+            deviceClass: USBBillboardPolicy.deviceClass(fromPropertyValue: classValue),
+            productName: productName
+        )
+    }
+}

@@ -51,6 +51,33 @@ public struct HDMICableTestRecord: Codable, Hashable, Sendable, Identifiable {
     }
 }
 
+extension HDMICableTestRecord {
+    /// Builds a record from what was actually measured on a display. Nil when nothing was:
+    /// a cable must not get a history entry for a test that never ran.
+    static func measured(
+        displayName: String,
+        highestVerifiedMode: HDMICapabilityTestEntry?,
+        capabilityScore: Double?,
+        stress: HDMIStressTestResult?,
+        timestamp: Date = Date()
+    ) -> HDMICableTestRecord? {
+        guard highestVerifiedMode != nil || stress != nil else { return nil }
+        let stability = stress?.stabilityScore ?? capabilityScore.map { Int($0.rounded()) } ?? 0
+        let scores = [capabilityScore.map { Int($0.rounded()) }, stress?.stabilityScore].compactMap { $0 }
+        return HDMICableTestRecord(
+            timestamp: timestamp,
+            displayName: displayName,
+            maximumVerifiedMode: highestVerifiedMode?.modeDescription ?? "—",
+            maximumBandwidthGbps: highestVerifiedMode?.bandwidthGbps ?? 0,
+            stressTestDuration: stress?.durationSeconds,
+            disconnects: stress?.disconnects ?? 0,
+            renegotiations: stress?.renegotiations ?? 0,
+            stabilityScore: stability,
+            overallScore: scores.isEmpty ? 0 : scores.reduce(0, +) / scores.count
+        )
+    }
+}
+
 @Observable
 @MainActor
 public final class HDMICableHistoryStore {

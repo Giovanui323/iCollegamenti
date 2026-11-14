@@ -292,3 +292,28 @@ public extension HDMIScoringEngine {
         )
     }
 }
+
+// MARK: - Link reference for the signal view
+
+/// The link capacity the signal is compared against: what the display states in its EDID
+/// when it does, otherwise the HDMI 2.1 ceiling, which is theoretical for this connection.
+public struct HDMILinkReference: Codable, Hashable, Sendable {
+    public let capacityGbps: Double
+    public let isStatedByDisplay: Bool
+
+    public init(edid: ParsedEDID?) {
+        if let stated = edid?.advertisedLinkCapacityGbps, stated > 0 {
+            capacityGbps = stated
+            isStatedByDisplay = true
+        } else {
+            capacityGbps = HDMIStandard.hdmi21.maxBandwidthGbps
+            isStatedByDisplay = false
+        }
+    }
+
+    /// Share of the link left free by a signal, 0…1.
+    public func freeShare(requiredGbps: Double) -> Double {
+        guard capacityGbps > 0, requiredGbps.isFinite else { return 0 }
+        return min(1, max(0, (capacityGbps - requiredGbps) / capacityGbps))
+    }
+}

@@ -211,4 +211,23 @@ final class HDMIDisplayInsightsTests: XCTestCase {
         XCTAssertFalse(ConnectionDiagnosisEngine.analyze(currentLinkSpeedBps: nil, referenceMaxSpeedBps: nil, constraints: []).lacksReferenceMeasurement)
         XCTAssertFalse(ConnectionDiagnosisEngine.analyze(currentLinkSpeedBps: 5_000_000_000, referenceMaxSpeedBps: 5_000_000_000, constraints: []).lacksReferenceMeasurement)
     }
+
+    // MARK: Signal view link reference
+
+    func testLinkReferencePrefersTheDisplaysStatedLimit() throws {
+        let stated = HDMILinkReference(edid: try parsed())
+        XCTAssertTrue(stated.isStatedByDisplay)
+        XCTAssertEqual(stated.capacityGbps, 18, accuracy: 0.0001)
+        XCTAssertEqual(stated.freeShare(requiredGbps: 9), 0.5, accuracy: 0.0001)
+        XCTAssertEqual(stated.freeShare(requiredGbps: 30), 0, "An exceeded link has no free share")
+
+        let theoretical = HDMILinkReference(edid: nil)
+        XCTAssertFalse(theoretical.isStatedByDisplay)
+        XCTAssertEqual(theoretical.capacityGbps, 48)
+        XCTAssertEqual(theoretical.freeShare(requiredGbps: .nan), 0)
+    }
+
+    func testDeadPixelPatternIsOffered() {
+        XCTAssertTrue(HDMITestPattern.allCases.contains(.deadPixels))
+    }
 }

@@ -33,9 +33,14 @@ struct HDMIChainVisualizerView: View {
         ScrollView {
             VStack(spacing: 0) {
                 if diagnosis.nodes.isEmpty {
-                    Text(lm.t("No nodes available.", "Nessun nodo disponibile."))
-                        .foregroundStyle(.secondary)
-                        .padding()
+                    ContentUnavailableView(
+                        lm.t("Chain not measurable", "Catena non misurabile"),
+                        systemImage: "point.3.connected.trianglepath.dotted",
+                        description: Text(lm.t(
+                            "The chain is Mac → port → adapter or dock → cable → monitor. macOS does not report the limits of the port, adapter or cable, so they cannot be drawn without guessing. Use the Test tab to check which modes actually work through your chain.",
+                            "La catena è Mac → porta → adattatore o dock → cavo → monitor. macOS non comunica i limiti di porta, adattatore e cavo, quindi non si possono disegnare senza tirare a indovinare. Usa la scheda Test per verificare quali modalità funzionano davvero con la tua catena."
+                        ))
+                    )
                 } else {
                     ForEach(Array(diagnosis.nodes.enumerated()), id: \.offset) { index, node in
                         nodeView(node: node, isBottleneck: diagnosis.bottleneckNodeId == node.id)

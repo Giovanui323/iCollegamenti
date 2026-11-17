@@ -13,6 +13,7 @@ public final class HDMIStressTestService {
     /// Display the last result belongs to, so another monitor never shows it.
     private var resultDisplayID: CGDirectDisplayID?
     private var elapsedSeconds: Int = 0
+    private var startedAt = Date()
     private var timer: Timer?
     private var initialMode: CGDisplayMode?
     private var initialRefresh: Double = 0
@@ -29,6 +30,7 @@ public final class HDMIStressTestService {
         isRunning = true
         monitoringDisplayID = displayID
         elapsedSeconds = 0
+        startedAt = Date()
         events = []
         
         initialMode = CGDisplayCopyDisplayMode(displayID)
@@ -38,10 +40,13 @@ public final class HDMIStressTestService {
         lastHeight = initialMode?.pixelHeight ?? 0
         lastRefresh = initialRefresh
 
-        timer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { [weak self] _ in
+        // `.common` keeps the timer firing while a menu is open or a view scrolls; the elapsed time
+        // comes from the clock, because counting ticks made the test run longer than requested.
+        let timer = Timer(timeInterval: 1.0, repeats: true) { [weak self] _ in
             guard let self else { return }
             Task { @MainActor in
-                self.elapsedSeconds += 1
+                guard self.isRunning else { return }
+                self.elapsedSeconds = Int(Date().timeIntervalSince(self.startedAt))
                 
                 // Record a change once, when the state changes, not on every second it lasts.
                 let isActive = CGDisplayIsActive(displayID) != 0
@@ -73,6 +78,8 @@ public final class HDMIStressTestService {
                 }
             }
         }
+        RunLoop.main.add(timer, forMode: .common)
+        self.timer = timer
     }
 
     private func recordEvent(_ type: HDMIStressEventType, _ description: String) {
@@ -104,10 +111,12 @@ public final class HDMIStressTestService {
     }
 
     public func stopStressTest() {
-        completeStressTest(durationSeconds: elapsedSeconds)
+        guard isRunning else { return }
+        completeStressTest(durationSeconds: Int(Date().timeIntervalSince(startedAt)))
     }
-    
-    public func isRunning(for displayID: CGDirectDisplayID) -> Bool { isRunning }
+
+    /// Only the monitored display is running; other monitors must not show its progress.
+    public func isRunning(for displayID: CGDirectDisplayID) -> Bool { isRunning && monitoringDisplayID == displayID }
     public func start(for displayID: CGDirectDisplayID, durationMinutes: Int) {
         startStressTest(displayID: displayID, durationSeconds: durationMinutes * 60)
     }

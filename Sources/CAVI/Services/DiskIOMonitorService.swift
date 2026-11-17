@@ -24,11 +24,13 @@ public final class DiskIOMonitorService {
     
     /// Start monitoring I/O for a specific device by BSD name (e.g. "disk7")
     public func startMonitoring(bsdName: String) {
-        stopMonitoring()
-        
         // Get the whole disk BSD name (e.g. "disk7" from "disk7s1")
         // APFS snapshots nest slices ("disk3s1s1"), so take the leading "diskN" instead of stripping one suffix.
         let wholeDisk = bsdName.range(of: #"^disk\d+"#, options: .regularExpression).map { String(bsdName[$0]) } ?? bsdName
+        // The view calls this on every device-list refresh. Restarting the same disk reset the
+        // peak values and dropped the next sample, so the live readout kept falling back to zero.
+        if isMonitoring, wholeDisk == currentBSDName, monitorTask != nil { return }
+        stopMonitoring()
         currentBSDName = wholeDisk
         isMonitoring = true
         

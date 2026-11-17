@@ -1,0 +1,20 @@
+name: Build e test
+on:
+  push:
+    branches: [main]
+  pull_request:
+permissions:
+  contents: read
+jobs:
+  test:
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Versione Swift
+        run: swift --version
+      - name: Compila
+        run: swift build
+      - name: Test unitari e di integrazione
+        run: swift test
+      - name: Test di sicurezza
+        run: swift run SafetyTestRunner

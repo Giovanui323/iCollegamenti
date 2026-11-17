@@ -21,7 +21,9 @@ public final class EDIDReaderService {
 
         let vendor = CGDisplayVendorNumber(displayID)
         let product = CGDisplayModelNumber(displayID)
-        guard let bytes = legacyEDIDBytes(vendor: vendor, product: product) ?? registryEDIDBytes(vendor: vendor, product: product),
+        let serial = CGDisplaySerialNumber(displayID)
+        guard let bytes = legacyEDIDBytes(vendor: vendor, product: product, serial: serial)
+                ?? registryEDIDBytes(vendor: vendor, product: product, serial: serial),
               let edid = EDIDParser.parse(bytes)
         else {
             unavailableDisplayIDs.insert(displayID)
@@ -49,7 +51,10 @@ public final class EDIDReaderService {
         return nil
     }
 
+    /// Called when the display configuration changes. A display whose EDID was not yet published
+    /// in the I/O Registry right after hot-plug is retried, instead of staying "unavailable" forever.
     public func readAllEDIDs(displayIDs: [CGDirectDisplayID]) {
+        unavailableDisplayIDs.subtract(displayIDs)
         for id in displayIDs {
             _ = readEDID(for: id)
         }
@@ -71,13 +76,14 @@ public final class EDIDReaderService {
     }
 
     /// Older Intel Macs expose the EDID on `IODisplayConnect` services.
-    private func legacyEDIDBytes(vendor: UInt32, product: UInt32) -> [UInt8]? {
+    private func legacyEDIDBytes(vendor: UInt32, product: UInt32, serial: UInt32) -> [UInt8]? {
         var iterator: io_iterator_t = 0
         guard IOServiceGetMatchingServices(kIOMainPortDefault, IOServiceMatching("IODisplayConnect"), &iterator) == KERN_SUCCESS else {
             return nil
         }
         defer { IOObjectRelease(iterator) }
 
+        var candidates: [[UInt8]] = []
         var service = IOIteratorNext(iterator)
         while service != 0 {
             defer {
@@ -90,29 +96,45 @@ public final class EDIDReaderService {
                   let data = IORegistryEntryCreateCFProperty(service, "IODisplayEDID" as CFString, kCFAllocatorDefault, 0)?.takeRetainedValue() as? Data,
                   Self.isEDIDMatching([UInt8](data), vendor: vendor, product: product)
             else { continue }
-            return [UInt8](data)
+            candidates.append([UInt8](data))
         }
-        return nil
+        return Self.preferredEDID(candidates, serial: serial)
     }
 
     /// Apple silicon Macs expose the EDID as an `EDID` property on the display transport nodes.
-    private func registryEDIDBytes(vendor: UInt32, product: UInt32) -> [UInt8]? {
+    private func registryEDIDBytes(vendor: UInt32, product: UInt32, serial: UInt32) -> [UInt8]? {
         var iterator: io_iterator_t = 0
         guard IORegistryCreateIterator(kIOMainPortDefault, kIOServicePlane, IOOptionBits(kIORegistryIterateRecursively), &iterator) == KERN_SUCCESS else {
             return nil
         }
         defer { IOObjectRelease(iterator) }
 
+        var candidates: [[UInt8]] = []
         var entry = IOIteratorNext(iterator)
         while entry != 0 {
             let data = IORegistryEntryCreateCFProperty(entry, "EDID" as CFString, kCFAllocatorDefault, 0)?.takeRetainedValue() as? Data
             IOObjectRelease(entry)
             if let data, Self.isEDIDMatching([UInt8](data), vendor: vendor, product: product) {
-                return [UInt8](data)
+                let bytes = [UInt8](data)
+                // The serial is the only thing that tells two monitors of the same model apart.
+                if serial != 0, Self.edidSerial(bytes) == serial { return bytes }
+                candidates.append(bytes)
             }
             entry = IOIteratorNext(iterator)
         }
-        return nil
+        return Self.preferredEDID(candidates, serial: serial)
+    }
+
+    /// Two identical monitors share vendor and product codes; returning the first match gave both
+    /// the same EDID. Prefer the one whose serial matches what CoreGraphics reports.
+    nonisolated static func preferredEDID(_ candidates: [[UInt8]], serial: UInt32) -> [UInt8]? {
+        if serial != 0, let exact = candidates.first(where: { edidSerial($0) == serial }) { return exact }
+        return candidates.first
+    }
+
+    nonisolated static func edidSerial(_ bytes: [UInt8]) -> UInt32? {
+        guard bytes.count >= 16 else { return nil }
+        return UInt32(bytes[12]) | UInt32(bytes[13]) << 8 | UInt32(bytes[14]) << 16 | UInt32(bytes[15]) << 24
     }
 
     /// Checks the EDID header and that its manufacturer and product code match the display reported by CoreGraphics.

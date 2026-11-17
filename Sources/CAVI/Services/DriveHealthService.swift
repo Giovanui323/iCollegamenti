@@ -82,8 +82,11 @@ final class DriveHealthService {
                 var mediaErrors: Int?
                 var unsafeShutdowns: Int?
 
+                // SMART belongs to the whole disk; smartctl cannot open a slice such as disk4s1,
+                // which is the BSD name the app usually holds for a mounted volume.
+                let wholeDisk = normalized.range(of: #"^disk\d+"#, options: .regularExpression).map { String(normalized[$0]) } ?? normalized
                 if let smartctl = smartctlPath(),
-                   let smartData = run(smartctl, arguments: ["-a", "-j", "-n", "standby", "/dev/\(normalized)"], acceptsNonZeroExit: true),
+                   let smartData = run(smartctl, arguments: ["-a", "-j", "-n", "standby", "/dev/\(wholeDisk)"], acceptsNonZeroExit: true),
                    let smart = try? JSONSerialization.jsonObject(with: smartData) as? [String: Any] {
                     if let passed = nestedValue(in: smart, path: ["smart_status", "passed"]) as? Bool {
                         status = passed ? .verified : .failing

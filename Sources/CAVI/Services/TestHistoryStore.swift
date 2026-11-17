@@ -363,7 +363,9 @@ public final class TestHistoryStore {
             skippedDuplicates: summary.skippedDuplicates
         )
         guard !newResults.isEmpty else { return total }
-        testResults.insert(contentsOf: newResults, at: 0)
+        // Imported records can be older than existing ones; keep the list newest first,
+        // because lookups such as `savedResult(for:)` take the first match.
+        testResults = (newResults + testResults).sorted { $0.timestamp > $1.timestamp }
         save()
         return total
     }
@@ -622,10 +624,11 @@ public final class TestHistoryStore {
     public func load() {
         migrateLegacyDataIfNeeded()
         
+        var needsMigrationSave = false
         if let decoded = decodeFile([CableTestResult].self, at: historyFileURL) {
             let reclassified = decoded.map(Self.reclassifyingBillboard)
             testResults = reclassified
-            if reclassified != decoded { save() }
+            needsMigrationSave = reclassified != decoded
         }
         
         if let decoded = decodeFile([ReferenceDevice].self, at: referencesFileURL) {
@@ -643,6 +646,10 @@ public final class TestHistoryStore {
         if let decoded = decodeFile([DeviceHistoryEntry].self, at: deviceHistoryFileURL) {
             deviceHistory = decoded
         }
+
+        // Saving writes every file, so it must wait until all of them are loaded. Saving right after
+        // the history file overwrote references, cables, advanced benchmarks and device history with [].
+        if needsMigrationSave { save() }
     }
 
     /// Decodes a stored file. If the file exists but cannot be read (corrupt, or written by a newer

@@ -269,7 +269,9 @@ struct USBFlashDriveTesterView: View {
 
                 if let advancedResult {
                     AdvancedBenchmarkResultView(result: advancedResult, languageManager: languageManager)
-                    if let sustainedWrite = advancedResult.samples.reversed().compactMap(\.writeMBps).first {
+                    // Video capability needs a large sequential write; random 4K or mixed throughput would understate it.
+                    if [.sequential, .sustainedWrite, .stress].contains(advancedResult.configuration.workload),
+                       let sustainedWrite = advancedResult.samples.reversed().compactMap(\.writeMBps).first {
                         VideoCapabilityView(sustainedWriteMBps: sustainedWrite, languageManager: languageManager)
                     }
                 }

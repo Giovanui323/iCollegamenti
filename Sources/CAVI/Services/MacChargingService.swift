@@ -24,7 +24,15 @@ struct MacChargingSnapshot: Sendable {
         batteryPercent: nil
     )
 
-    var observedWatts: Double? { batteryWatts ?? adapterWatts.map(Double.init) }
+    /// Battery-side power counts only while current flows into the battery. With a full battery the
+    /// current is 0 W, and under heavy load on AC it is negative (the battery helps the adapter):
+    /// `abs()` reported that discharge as charging, and 0 W showed a 96 W adapter as "slow charging".
+    var observedWatts: Double? {
+        if let batteryWatts, let batteryCurrentAmps, batteryCurrentAmps > 0, batteryWatts > 0 {
+            return batteryWatts
+        }
+        return adapterWatts.map(Double.init)
+    }
 
     var assessment: String {
         guard isOnExternalPower else { return "Non collegato all'alimentazione" }
@@ -38,7 +46,7 @@ struct MacChargingSnapshot: Sendable {
     }
 
     var detail: String {
-        if let batteryWatts {
+        if let batteryWatts, let batteryCurrentAmps, batteryCurrentAmps > 0 {
             return "Potenza stimata lato batteria: \(String(format: "%.1f", batteryWatts)) W. Può essere inferiore alla potenza dell'alimentatore per consumi del Mac e gestione termica."
         }
         if let adapterWatts {

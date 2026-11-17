@@ -173,7 +173,9 @@ struct HDMICapabilityTestView: View {
     private func stressTestSection(display: HDMIDisplayDevice) -> some View {
         GroupBox(lm.t("Stress Test", "Stress Test")) {
             VStack(alignment: .leading, spacing: 16) {
-                let isRunning = stressTest.isRunning
+                let isRunning = stressTest.isRunning(for: display.displayID)
+                // One stress test runs at a time; another monitor's test must not be stopped from here.
+                let isBusyElsewhere = stressTest.isRunning && !isRunning
                 
                 HStack {
                     Picker(lm.t("Duration", "Durata"), selection: $stressDurationMins) {
@@ -197,6 +199,8 @@ struct HDMICapabilityTestView: View {
                     }
                     .buttonStyle(.borderedProminent)
                     .tint(isRunning ? .red : .orange)
+                    .disabled(isBusyElsewhere)
+                    .help(isBusyElsewhere ? lm.t("A stress test is already running on another display.", "È già in corso uno stress test su un altro monitor.") : "")
                 }
                 
                 let events = stressTest.events(for: display.displayID)

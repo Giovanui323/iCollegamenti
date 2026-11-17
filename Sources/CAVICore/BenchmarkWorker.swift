@@ -36,9 +36,40 @@ public struct BenchmarkProgress: Sendable {
         self.fractionCompleted = fractionCompleted
     }
 }
+/// Forwards at most one progress update per interval, plus every phase change and completion.
+/// The worker reports after each block; awaiting a main-actor hop that often slowed the
+/// measured loop itself and flooded the UI with redraws.
+final class ProgressThrottle: @unchecked Sendable {
+    private let lock = NSLock()
+    private let minimumInterval: CFAbsoluteTime
+    private var lastForwarded: CFAbsoluteTime = 0
+    private var lastPhase: BenchmarkPhase?
+
+    init(minimumInterval: CFAbsoluteTime = 0.1) {
+        self.minimumInterval = minimumInterval
+    }
+
+    func shouldForward(_ update: BenchmarkProgress, now: CFAbsoluteTime = CFAbsoluteTimeGetCurrent()) -> Bool {
+        lock.lock(); defer { lock.unlock() }
+        let isBoundary = update.phase != lastPhase || update.phase == .finished || update.fractionCompleted >= 1
+        guard isBoundary || now - lastForwarded >= minimumInterval else { return false }
+        lastForwarded = now
+        lastPhase = update.phase
+        return true
+    }
+
+    static func wrap(_ progress: @escaping @Sendable (BenchmarkProgress) async -> Void) -> @Sendable (BenchmarkProgress) async -> Void {
+        let throttle = ProgressThrottle()
+        return { update in
+            if throttle.shouldForward(update) { await progress(update) }
+        }
+    }
+}
+
 public struct BenchmarkWorker: Sendable {
     public init() {}
-    public func run(mountPath: String, testSizeBytes: UInt64, progress: @Sendable (BenchmarkProgress) async -> Void = { _ in }) async throws -> BenchmarkMeasurement {
+    public func run(mountPath: String, testSizeBytes: UInt64, progress unthrottledProgress: @escaping @Sendable (BenchmarkProgress) async -> Void = { _ in }) async throws -> BenchmarkMeasurement {
+        let progress = ProgressThrottle.wrap(unthrottledProgress)
         await progress(.init(phase: .preparing, fractionCompleted: 0))
         let fm = FileManager.default; var isDirectory = ObjCBool(false)
         guard fm.fileExists(atPath: mountPath, isDirectory: &isDirectory), isDirectory.boolValue else { throw BenchmarkError.invalidPath }
@@ -73,8 +104,9 @@ public extension BenchmarkWorker {
         configuration: AdvancedBenchmarkConfiguration,
         testSizeBytes: UInt64? = nil,
         requiredFreeBytes: UInt64? = nil,
-        progress: @Sendable (BenchmarkProgress) async -> Void = { _ in }
+        progress unthrottledProgress: @escaping @Sendable (BenchmarkProgress) async -> Void = { _ in }
     ) async throws -> AdvancedBenchmarkResult {
+        let progress = ProgressThrottle.wrap(unthrottledProgress)
         await progress(.init(phase: .preparing, fractionCompleted: 0))
         let fileManager = FileManager.default
         var isDirectory = ObjCBool(false)
@@ -226,7 +258,14 @@ public extension BenchmarkWorker {
                 ))
                 lastSample = now
             }
-            await progress(.init(phase: .writing, fractionCompleted: min(Double(totalWritten) / Double(byteCount), 0.99)))
+            // A timed stress test keeps writing after the quota, so its bar follows the clock.
+            let fraction: Double
+            if isStressTest, let duration = configuration.stressDurationSeconds, duration > 0 {
+                fraction = max(Double(totalWritten) / Double(byteCount), (now - started) / duration)
+            } else {
+                fraction = Double(totalWritten) / Double(byteCount)
+            }
+            await progress(.init(phase: .writing, fractionCompleted: min(fraction, 0.99)))
             if !isStressTest && totalWritten >= byteCount { break }
         }
         guard fullSync(fd) == 0 else { throw ioError() }
@@ -529,13 +568,22 @@ private struct BenchmarkRandom {
         return state
     }
 
+    /// Fills eight bytes per step (little-endian, the same byte order as before). The previous
+    /// byte-by-byte loop cost enough CPU to cap measured write speed on fast NVMe drives.
     mutating func fill(_ bytes: inout [UInt8]) {
-        var value: UInt64 = 0
-        for index in bytes.indices {
-            if index.isMultiple(of: MemoryLayout<UInt64>.size) {
-                value = next()
+        let wordSize = MemoryLayout<UInt64>.size
+        let wholeWords = bytes.count / wordSize
+        bytes.withUnsafeMutableBytes { raw in
+            for word in 0..<wholeWords {
+                raw.storeBytes(of: next().littleEndian, toByteOffset: word * wordSize, as: UInt64.self)
             }
-            bytes[index] = UInt8(truncatingIfNeeded: value >> ((index % MemoryLayout<UInt64>.size) * 8))
+            let tail = wholeWords * wordSize
+            if tail < raw.count {
+                let value = next()
+                for index in tail..<raw.count {
+                    raw[index] = UInt8(truncatingIfNeeded: value >> ((index - tail) * 8))
+                }
+            }
         }
     }
 }

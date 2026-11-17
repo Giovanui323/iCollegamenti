@@ -35,7 +35,7 @@ final class BenchmarkService {
         defer { benchmarkTask = nil; isRunning = false }
 
         do {
-            let task = Task { [worker] in
+            let task = Task { [worker, weak self] in
                 try await worker.run(mountPath: mountPath, testSizeBytes: config.testSizeBytes) { [weak self] update in
                     await self?.apply(update)
                 }
@@ -106,7 +106,7 @@ final class BenchmarkService {
                 for: configuration.preset,
                 volumeCapacityBytes: volumeCapacityBytes
             )
-            let task = Task { [worker] in
+            let task = Task { [worker, weak self] in
                 try await worker.runAdvanced(
                     mountPath: mountPath,
                     configuration: configuration,

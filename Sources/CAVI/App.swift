@@ -88,7 +88,7 @@ struct CAVIApp: App {
                     NSApplication.shared.orderFrontStandardAboutPanel(
                         options: [
                             .applicationName: "iCollegamenti",
-                            .version: "1.0"
+                            .version: Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "2.1"
                         ]
                     )
                 }

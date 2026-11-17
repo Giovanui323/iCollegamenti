@@ -1,7 +1,7 @@
 #!/bin/bash
 set -e
 
-APP_VERSION="2.0"
+APP_VERSION="2.1"
 APP_BUNDLE="iCollegamenti.app"
 BUILD_SCRATCH=".build/app-release"
 

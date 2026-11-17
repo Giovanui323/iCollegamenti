@@ -25,7 +25,7 @@ enum EDIDFixture {
         block += [0x78, 0x56, 0x34, 0x12] // serial 0x12345678
         block += [12, 30] // week 12, 2020
         block += [1, 4] // EDID 1.4
-        block += [0x80 | 0x35, 60, 34, 120, 0x18] // digital, 60x34 cm, gamma 2.2, YCbCr 4:4:4 + 4:2:2
+        block += [UInt8(0x80 | 0x35), 60, 34, 120, 0x18] as [UInt8] // digital, 60x34 cm, gamma 2.2, YCbCr 4:4:4 + 4:2:2
         block += Array(repeating: 0, count: 10) // chromaticity
         block += [0x20, 0x08, 0x80] // established: 640x480@60, 1024x768@60, 1152x870@75
         // Standard timings: 1920x1080@60 (16:9), 1280x1024@60 (5:4), then unused slots.

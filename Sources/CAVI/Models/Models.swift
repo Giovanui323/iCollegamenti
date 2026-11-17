@@ -484,17 +484,19 @@ public struct DriveDevice: Identifiable, Hashable, Sendable, Codable {
     /// Best-effort signature of a *connection*, not a cable serial number. macOS normally exposes
     /// the attached device and USB path, but not the Type-C e-marker identity of the cable.
     public var connectionFingerprint: String {
-        let topology = usbTopology.map {
-            [
-                $0.className,
-                String($0.vendorID ?? 0),
-                String($0.productID ?? 0),
-                $0.serialNumber ?? "no-serial",
-                String($0.locationID ?? 0),
-                String($0.linkSpeedBps ?? 0)
-            ].joined(separator: ":")
+        // Explicit types: older Swift compilers (the CI runner's) give up type-checking these literals.
+        let topology: String = usbTopology.map { node -> String in
+            let parts: [String] = [
+                node.className,
+                String(node.vendorID ?? 0),
+                String(node.productID ?? 0),
+                node.serialNumber ?? "no-serial",
+                String(node.locationID ?? 0),
+                String(node.linkSpeedBps ?? 0)
+            ]
+            return parts.joined(separator: ":")
         }.joined(separator: "/")
-        return [
+        let parts: [String] = [
             String(vendorID ?? 0),
             String(productID ?? 0),
             serialNumber ?? "no-serial",
@@ -503,7 +505,8 @@ public struct DriveDevice: Identifiable, Hashable, Sendable, Codable {
             String(negotiatedSpeedBps ?? 0),
             String(powerInfo?.powerSinkAllocationMw ?? 0),
             topology
-        ].joined(separator: "|")
+        ]
+        return parts.joined(separator: "|")
     }
 
     /// A stable identity needs either the device serial number or a sufficiently detailed USB path.
